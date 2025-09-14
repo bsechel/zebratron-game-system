@@ -249,7 +249,7 @@ const MASTER_PALETTE: [(u8, u8, u8); 128] = [
     (245, 222, 179), (255, 228, 196), (255, 235, 205), (255, 248, 220),
 ];
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum EntityType {
     Player,
     Enemy,
@@ -443,8 +443,7 @@ impl Ppu {
                         entity.on_ground = false;
                     }
 
-                    // Platform collision
-                    self.check_platform_collisions(0); // Player is at index 0
+                    // Platform collision will be handled after the main loop
 
                     // Apply friction when on ground
                     if entity.on_ground {
@@ -460,13 +459,21 @@ impl Ppu {
                     if entity.entity_type == EntityType::Player {
                         self.sprite_x = entity.x;
                         self.sprite_y = entity.y;
-                        self.update_camera_follow_player();
+                        // Camera will be updated after physics loop
                     }
                 }
                 _ => {
                     // Other entity types can have different physics later
                 }
             }
+        }
+
+        // Handle platform collisions after main physics loop
+        self.check_platform_collisions(self.player_id);
+
+        // Update camera to follow player after physics
+        if self.player_id < self.entities.len() {
+            self.update_camera_follow_player();
         }
     }
 
@@ -490,37 +497,14 @@ impl Ppu {
     }
 
     fn render_test_pattern(&mut self) {
-        // Update camera to follow sprite (keep sprite centered on screen)
-        self.camera_x = self.sprite_x - (SCREEN_WIDTH as f32 / 2.0) + 16.0; // +16 to center 32x32 sprite
-        self.camera_y = self.sprite_y - (SCREEN_HEIGHT as f32 / 2.0) + 16.0;
+        // Render the layered background system (back to front)
+        self.render_sky_gradient();
+        self.render_clouds();          // Clouds in the sky
+        self.render_mountains();       // Mountains behind trees
+        self.render_background_trees(); // Trees between mountains and foreground
+        self.render_ground_terrain();  // Ground in front of everything else
 
-        // Render infinite scrolling background pattern
-        for y in 0..SCREEN_HEIGHT {
-            for x in 0..SCREEN_WIDTH {
-                let pixel_index = (y * SCREEN_WIDTH + x) * 4;
-
-                // World coordinates (add camera offset for scrolling)
-                let world_x = (x as f32 + self.camera_x) as usize;
-                let world_y = (y as f32 + self.camera_y) as usize;
-
-                // Create a repeating tile pattern using palette colors
-                let palette_index = if world_x % 32 == 0 || world_y % 32 == 0 {
-                    7u8  // Light gray grid lines
-                } else if (world_x / 32 + world_y / 32) % 2 == 0 {
-                    96u8 // Dark purple from palette
-                } else {
-                    4u8  // Dark gray from palette
-                };
-
-                let (r, g, b) = self.get_palette_color(palette_index);
-                self.screen_buffer[pixel_index] = r;
-                self.screen_buffer[pixel_index + 1] = g;
-                self.screen_buffer[pixel_index + 2] = b;
-                self.screen_buffer[pixel_index + 3] = 255;
-            }
-        }
-
-        // Render all entities
+        // Render all entities (player, platforms, enemies)
         self.render_entities();
 
         // Add demo text
@@ -769,8 +753,6 @@ impl Ppu {
     }
 
     fn render_platform_sprite(&mut self, x: i32, y: i32, width: i32, height: i32) {
-        let color = self.get_palette_color(32); // Brown color for platforms
-
         for dy in 0..height {
             for dx in 0..width {
                 let screen_x = x + dx;
@@ -779,11 +761,81 @@ impl Ppu {
                 if screen_x >= 0 && screen_x < SCREEN_WIDTH as i32 &&
                    screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
                     let pixel_index = ((screen_y as usize * SCREEN_WIDTH) + screen_x as usize) * 4;
-                    if pixel_index + 3 < self.screen_buffer.len() {
-                        self.screen_buffer[pixel_index] = color.0;
-                        self.screen_buffer[pixel_index + 1] = color.1;
-                        self.screen_buffer[pixel_index + 2] = color.2;
-                        self.screen_buffer[pixel_index + 3] = 255;
+                    if pixel_index + 3 >= self.screen_buffer.len() {
+                        continue;
+                    }
+
+                    // Create grass-topped platform with different layers
+                    let platform_color = if dy == 0 {
+                        // Top row: bright green grass
+                        50u8
+                    } else if dy <= 2 {
+                        // Next rows: darker green grass/dirt mix
+                        49u8
+                    } else if dy <= 4 {
+                        // Brown dirt layer
+                        33u8
+                    } else if dy <= 6 {
+                        // Darker brown earth
+                        34u8
+                    } else {
+                        // Deep dark brown/stone
+                        35u8
+                    };
+
+                    // Add some texture variation
+                    let texture_variation = ((screen_x + screen_y * 3) % 4) as u8;
+                    let final_color = if texture_variation == 0 && dy > 0 {
+                        // Slightly darker for texture
+                        (platform_color + 1).min(127)
+                    } else {
+                        platform_color
+                    };
+
+                    let (r, g, b) = self.get_palette_color(final_color);
+                    self.screen_buffer[pixel_index] = r;
+                    self.screen_buffer[pixel_index + 1] = g;
+                    self.screen_buffer[pixel_index + 2] = b;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+
+        // Add grass tufts on top of platform
+        self.render_grass_tufts(x, y, width);
+    }
+
+    fn render_grass_tufts(&mut self, platform_x: i32, platform_y: i32, platform_width: i32) {
+        // Add small grass tufts on top of platforms
+        let grass_color = self.get_palette_color(48u8); // Bright green
+
+        for tuft_x in (0..platform_width).step_by(8) {
+            let screen_x = platform_x + tuft_x;
+            let screen_y = platform_y - 1; // Just above the platform
+
+            if screen_x >= 0 && screen_x < SCREEN_WIDTH as i32 &&
+               screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
+                let pixel_index = ((screen_y as usize * SCREEN_WIDTH) + screen_x as usize) * 4;
+
+                // Simple grass tuft pattern
+                let tuft_pattern = [
+                    (0, 0), (1, 0), (2, 0),    // Base of tuft
+                    (1, -1),                   // Tip of tuft
+                ];
+
+                for (dx, dy) in tuft_pattern.iter() {
+                    let grass_x = screen_x + dx;
+                    let grass_y = screen_y + dy;
+
+                    if grass_x >= 0 && grass_x < SCREEN_WIDTH as i32 &&
+                       grass_y >= 0 && grass_y < SCREEN_HEIGHT as i32 {
+                        let grass_pixel = ((grass_y as usize * SCREEN_WIDTH) + grass_x as usize) * 4;
+                        if grass_pixel + 3 < self.screen_buffer.len() {
+                            self.screen_buffer[grass_pixel] = grass_color.0;
+                            self.screen_buffer[grass_pixel + 1] = grass_color.1;
+                            self.screen_buffer[grass_pixel + 2] = grass_color.2;
+                            self.screen_buffer[grass_pixel + 3] = 255;
+                        }
                     }
                 }
             }
@@ -842,6 +894,248 @@ impl Ppu {
         }
     }
 
+    // Background rendering system for hambertBoy-style environments
+    fn render_sky_gradient(&mut self) {
+        // Create a vertical gradient from light blue (top) to lighter blue/white (bottom)
+        // Using palette colors: light blue to cyan to white
+        for y in 0..SCREEN_HEIGHT {
+            // Calculate gradient position (0.0 at top, 1.0 at bottom)
+            let gradient_pos = y as f32 / SCREEN_HEIGHT as f32;
+
+            // Sky gradient: bright blue at top, lighter towards horizon
+            let palette_index = if gradient_pos < 0.3 {
+                84u8  // Bright blue
+            } else if gradient_pos < 0.6 {
+                85u8  // Slightly lighter blue
+            } else if gradient_pos < 0.8 {
+                86u8  // Even lighter blue
+            } else {
+                87u8  // Light blue near horizon
+            };
+
+            let (r, g, b) = self.get_palette_color(palette_index);
+
+            // Fill the entire width with this color
+            for x in 0..SCREEN_WIDTH {
+                let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+                self.screen_buffer[pixel_index] = r;
+                self.screen_buffer[pixel_index + 1] = g;
+                self.screen_buffer[pixel_index + 2] = b;
+                self.screen_buffer[pixel_index + 3] = 255;
+            }
+        }
+    }
+
+    fn render_mountains(&mut self) {
+        // Parallax mountain silhouettes in the background
+        // Mountains scroll slower than the camera for depth effect
+        let mountain_parallax_factor = 0.3; // Mountains move 30% of camera speed
+        let mountain_offset = self.camera_x * mountain_parallax_factor;
+
+        // Render mountain layers (back to front)
+        self.render_mountain_layer(mountain_offset * 0.5, 100, 96u8);  // Far mountains (purple)
+        self.render_mountain_layer(mountain_offset * 0.7, 120, 80u8);  // Mid mountains (darker blue)
+        self.render_mountain_layer(mountain_offset, 140, 48u8);        // Near mountains (dark green)
+    }
+
+    fn render_mountain_layer(&mut self, offset: f32, base_height: usize, color_index: u8) {
+        let (r, g, b) = self.get_palette_color(color_index);
+
+        // Create mountain silhouette using a simple sin wave pattern
+        for x in 0..SCREEN_WIDTH {
+            let world_x = x as f32 + offset;
+
+            // Create mountain profile using multiple sin waves for natural look
+            let mountain_height =
+                ((world_x * 0.01).sin() * 30.0) +           // Large mountains
+                ((world_x * 0.03).sin() * 15.0) +           // Medium hills
+                ((world_x * 0.05).sin() * 8.0) +            // Small details
+                ((world_x * 0.02).cos() * 20.0);            // Add some asymmetry
+
+            let mountain_top = (base_height as f32 + mountain_height) as usize;
+
+            // Fill from mountain top to bottom of screen
+            for y in mountain_top..SCREEN_HEIGHT {
+                if y < SCREEN_HEIGHT {
+                    let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+                    // Blend with existing color for transparency effect
+                    let existing_r = self.screen_buffer[pixel_index];
+                    let existing_g = self.screen_buffer[pixel_index + 1];
+                    let existing_b = self.screen_buffer[pixel_index + 2];
+
+                    // Simple alpha blending (50% mountain, 50% sky)
+                    self.screen_buffer[pixel_index] = ((r as u16 + existing_r as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 1] = ((g as u16 + existing_g as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 2] = ((b as u16 + existing_b as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
+    fn render_ground_terrain(&mut self) {
+        // Render ground level terrain that scrolls with camera
+        let ground_level = 200; // Base ground level
+
+        for x in 0..SCREEN_WIDTH {
+            let world_x = x as f32 + self.camera_x;
+
+            // Create slight terrain variation
+            let terrain_height = ((world_x * 0.02).sin() * 5.0) as i32;
+            let actual_ground = (ground_level + terrain_height) as usize;
+
+            // Render ground from terrain level to bottom
+            for y in actual_ground..SCREEN_HEIGHT {
+                if y < SCREEN_HEIGHT {
+                    let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+
+                    // Ground color based on depth
+                    let depth = y - actual_ground;
+                    let ground_color = if depth < 5 {
+                        49u8  // Bright green grass
+                    } else if depth < 15 {
+                        33u8  // Brown dirt
+                    } else {
+                        34u8  // Darker brown deeper underground
+                    };
+
+                    let (r, g, b) = self.get_palette_color(ground_color);
+                    self.screen_buffer[pixel_index] = r;
+                    self.screen_buffer[pixel_index + 1] = g;
+                    self.screen_buffer[pixel_index + 2] = b;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
+    fn render_clouds(&mut self) {
+        // Render puffy white clouds with parallax scrolling
+        let cloud_parallax = 0.2; // Clouds move slower than camera
+        let cloud_offset = self.camera_x * cloud_parallax;
+
+        // Render multiple cloud layers
+        self.render_cloud_layer(cloud_offset, 30, 87u8);       // High clouds (light blue-white)
+        self.render_cloud_layer(cloud_offset * 1.3, 50, 255u8); // Mid clouds (white)
+        self.render_cloud_layer(cloud_offset * 0.7, 20, 86u8);  // Lower clouds (light blue)
+    }
+
+    fn render_cloud_layer(&mut self, offset: f32, base_y: usize, color_index: u8) {
+        let (r, g, b) = self.get_palette_color(color_index);
+
+        // Generate cloud shapes using noise-like patterns
+        for cloud_center in (0..800).step_by(120) {
+            let cloud_x = (cloud_center as f32 + offset) % (SCREEN_WIDTH as f32 + 200.0) - 100.0;
+            let cloud_y = base_y as f32 + ((cloud_center as f32 * 0.01).sin() * 10.0);
+
+            self.render_single_cloud(cloud_x as i32, cloud_y as i32, color_index);
+        }
+    }
+
+    fn render_single_cloud(&mut self, center_x: i32, center_y: i32, color_index: u8) {
+        let (r, g, b) = self.get_palette_color(color_index);
+
+        // Cloud shape using overlapping circles
+        let cloud_parts = [
+            (0, 0, 16),    // Center
+            (-12, -4, 12), // Left
+            (12, -4, 12),  // Right
+            (-8, 4, 10),   // Bottom left
+            (8, 4, 10),    // Bottom right
+            (0, -8, 8),    // Top
+        ];
+
+        for (dx, dy, radius) in cloud_parts.iter() {
+            let part_x = center_x + dx;
+            let part_y = center_y + dy;
+
+            for y in (part_y - radius)..(part_y + radius) {
+                for x in (part_x - radius)..(part_x + radius) {
+                    if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
+                        let dist_sq = (x - part_x) * (x - part_x) + (y - part_y) * (y - part_y);
+                        if dist_sq <= (radius * radius) {
+                            let pixel_index = ((y as usize * SCREEN_WIDTH) + x as usize) * 4;
+                            if pixel_index + 3 < self.screen_buffer.len() {
+                                // Soft alpha blending with existing sky
+                                let existing_r = self.screen_buffer[pixel_index];
+                                let existing_g = self.screen_buffer[pixel_index + 1];
+                                let existing_b = self.screen_buffer[pixel_index + 2];
+
+                                let alpha = 0.7; // Cloud opacity
+                                self.screen_buffer[pixel_index] = ((r as f32 * alpha + existing_r as f32 * (1.0 - alpha)) as u8);
+                                self.screen_buffer[pixel_index + 1] = ((g as f32 * alpha + existing_g as f32 * (1.0 - alpha)) as u8);
+                                self.screen_buffer[pixel_index + 2] = ((b as f32 * alpha + existing_b as f32 * (1.0 - alpha)) as u8);
+                                self.screen_buffer[pixel_index + 3] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_background_trees(&mut self) {
+        // Render stylized background trees with parallax
+        let tree_parallax = 0.4; // Trees move slower than foreground
+        let tree_offset = self.camera_x * tree_parallax;
+
+        // Place trees at regular intervals
+        for tree_pos in (0..1200).step_by(80) {
+            let tree_x = (tree_pos as f32 + tree_offset) % (SCREEN_WIDTH as f32 + 100.0) - 50.0;
+            let ground_y = 200.0 + ((tree_x * 0.02).sin() * 5.0); // Follow ground contour
+
+            self.render_single_tree(tree_x as i32, ground_y as i32);
+        }
+    }
+
+    fn render_single_tree(&mut self, base_x: i32, base_y: i32) {
+        // Simple tree silhouette - trunk and crown
+        let trunk_width = 6;
+        let trunk_height = 40;
+        let crown_radius = 20;
+
+        // Render trunk
+        let trunk_color = self.get_palette_color(34u8); // Dark brown
+        for y in (base_y - trunk_height)..base_y {
+            for x in (base_x - trunk_width/2)..(base_x + trunk_width/2) {
+                if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
+                    let pixel_index = ((y as usize * SCREEN_WIDTH) + x as usize) * 4;
+                    if pixel_index + 3 < self.screen_buffer.len() {
+                        self.screen_buffer[pixel_index] = trunk_color.0;
+                        self.screen_buffer[pixel_index + 1] = trunk_color.1;
+                        self.screen_buffer[pixel_index + 2] = trunk_color.2;
+                        self.screen_buffer[pixel_index + 3] = 255;
+                    }
+                }
+            }
+        }
+
+        // Render crown (circular)
+        let crown_color = self.get_palette_color(48u8); // Dark green
+        let crown_center_y = base_y - trunk_height - crown_radius / 2;
+
+        for y in (crown_center_y - crown_radius)..(crown_center_y + crown_radius) {
+            for x in (base_x - crown_radius)..(base_x + crown_radius) {
+                if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
+                    let dist_sq = (x - base_x) * (x - base_x) + (y - crown_center_y) * (y - crown_center_y);
+                    if dist_sq <= (crown_radius * crown_radius) {
+                        let pixel_index = ((y as usize * SCREEN_WIDTH) + x as usize) * 4;
+                        if pixel_index + 3 < self.screen_buffer.len() {
+                            // Add some variation to the crown shape
+                            let variation = ((x as f32 * 0.3).sin() + (y as f32 * 0.4).cos()) * 0.3;
+                            if variation > -0.2 { // Create irregular crown edge
+                                self.screen_buffer[pixel_index] = crown_color.0;
+                                self.screen_buffer[pixel_index + 1] = crown_color.1;
+                                self.screen_buffer[pixel_index + 2] = crown_color.2;
+                                self.screen_buffer[pixel_index + 3] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
         js_sys::Uint8Array::from(&self.screen_buffer[..])
     }
@@ -868,13 +1162,18 @@ impl Ppu {
             self.sprite_y = player.y;
 
             // Update camera to follow player
-            self.update_camera_follow_player(player);
+            self.update_camera_follow_player();
         }
     }
 
     
 
-    fn update_camera_follow_player(&mut self, player: &Entity) {
+    fn update_camera_follow_player(&mut self) {
+        if self.player_id >= self.entities.len() {
+            return;
+        }
+
+        let player = &self.entities[self.player_id];
         let screen_center_x = SCREEN_WIDTH as f32 / 2.0;
         let screen_center_y = SCREEN_HEIGHT as f32 / 2.0;
 
@@ -909,7 +1208,7 @@ impl Ppu {
             let px1 = platform.x;
             let py1 = platform.y;
             let px2 = platform.x + platform.width;
-            let py2 = platform.y + platform.height;
+            let _py2 = platform.y + platform.height;
 
             // Check if entity is falling down onto platform
             if vel_y > 0.0 && ex1 < px2 && ex2 > px1 && ey2 >= py1 && ey1 < py1 {
@@ -937,7 +1236,7 @@ impl Ppu {
         self.entities.len() - 1
     }
 
-    pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool) {
+    pub fn handle_input(&mut self, up: bool, _down: bool, left: bool, right: bool) {
         if self.player_id >= self.entities.len() {
             return;
         }
