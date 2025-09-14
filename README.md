@@ -389,6 +389,42 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Inspired by the Nintendo Entertainment System and Sega Master System
-- Built with Rust, WebAssembly, and modern web technologies
-- Special thanks to the retro gaming and emulation communities
+### Inspiration and References
+
+**Hardware Architecture Inspired By:**
+- [Nintendo Entertainment System (NES)](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System) - CPU/PPU/APU separation model
+- [Sega Master System](https://en.wikipedia.org/wiki/Master_System) - 8-bit gaming architecture
+- [PICO-8 Fantasy Console](https://www.lexaloffle.com/pico-8.php) - Color palette limitations and pixel art constraints
+- [TIC-80 Fantasy Console](https://tic80.com/) - Modern retro development workflow
+
+**Character Assets:**
+- **Hambert Boy Sprites** - Character design and pixel art adapted from the original hambertBoy.js game
+  - Gray dog character with red boots and distinctive personality
+  - 24x20 pixel sprite format with authentic retro styling
+  - Walking and idle animations maintaining original charm
+
+**Technical References:**
+- [Rust WebAssembly Book](https://rustwasm.github.io/docs/book/) - WASM integration patterns
+- [wasm-pack Guide](https://rustwasm.github.io/wasm-pack/) - Build toolchain setup
+- [6502 CPU Reference](http://6502.org/) - CPU architecture inspiration
+- [NESDev Wiki](https://wiki.nesdev.com/) - PPU and memory mapping concepts
+
+**Development Philosophy:**
+- **Fantasy Consoles Movement** - Making game development accessible and fun
+- **Retro Gaming Preservation** - Keeping 8-bit aesthetics alive for new generations
+- **Modern Web Performance** - WebAssembly for near-native speed in browsers
+- **Artist-Friendly Design** - Clear palette constraints that encourage creativity
+
+### Special Thanks
+
+- **Original hambertBoy.js** - For the beloved character and game design inspiration
+- **Rust Community** - For excellent WebAssembly tooling and documentation
+- **Retro Gaming Community** - For preserving and celebrating classic game design
+- **Fantasy Console Developers** - For proving that limitations breed creativity
+- **Contributors** - Everyone who helps make ZebratronGameSystem better
+
+**Built with love using:**
+- Rust + WebAssembly for performance
+- TypeScript + Vite for modern development
+- Canvas 2D API for authentic pixel rendering
+- Web Audio API for chip-tune synthesis

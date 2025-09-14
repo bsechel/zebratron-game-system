@@ -491,7 +491,7 @@ impl Ppu {
         // Hambert color palette mapped to our system
         let hambert_colors = [
             0,   // 0 - transparent -> black in our palette
-            80,  // 1 - #888888 gray fur -> gray from our palette
+            10,  // 1 - mid-light gray fur (lighter than original)
             0,   // 2 - #000000 eye outline -> black
             15,  // 3 - #ffffff eye white -> white from our palette
             0,   // 4 - #000000 black nose -> black
@@ -556,7 +556,7 @@ impl Ppu {
         // Same color palette as idle Hambert
         let hambert_colors = [
             0,   // 0 - transparent
-            80,  // 1 - gray fur
+            10,  // 1 - mid-light gray fur (lighter than original)
             0,   // 2 - eye outline black
             15,  // 3 - eye white
             0,   // 4 - black nose
