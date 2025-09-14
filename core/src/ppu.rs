@@ -372,7 +372,10 @@ impl Ppu {
         };
 
         // Create a default player entity
-        let player = Entity::new(EntityType::Player, 100.0, 100.0, 0);
+        // Move player lower so he's clearly on the ground, not at tree level
+        // Ground surface is at y=200, so put player bottom at y=205 (slightly into the ground for stability)
+        let mut player = Entity::new(EntityType::Player, 100.0, 185.0, 0); // Player spans y=185 to y=205
+        player.on_ground = true; // Start on ground so jumping works immediately
         ppu.entities.push(player);
         ppu.player_id = 0;
 
@@ -413,7 +416,6 @@ impl Ppu {
     fn update_physics(&mut self) {
         const GRAVITY: f32 = 0.4;  // Pixels per frame squared
         const MAX_FALL_SPEED: f32 = 8.0;  // Terminal velocity
-        const GROUND_LEVEL: f32 = 200.0;  // Simple ground level for now
 
         for entity in &mut self.entities {
             if !entity.active {
@@ -434,14 +436,7 @@ impl Ppu {
                     entity.x += entity.vel_x;
                     entity.y += entity.vel_y;
 
-                    // Ground collision (simple for now)
-                    if entity.y + entity.height >= GROUND_LEVEL {
-                        entity.y = GROUND_LEVEL - entity.height;
-                        entity.vel_y = 0.0;
-                        entity.on_ground = true;
-                    } else {
-                        entity.on_ground = false;
-                    }
+                    // Ground collision handled separately after physics loop
 
                     // Platform collision will be handled after the main loop
 
@@ -468,8 +463,9 @@ impl Ppu {
             }
         }
 
-        // Handle platform collisions after main physics loop
+        // Handle collisions after main physics loop
         self.check_platform_collisions(self.player_id);
+        self.check_ground_collision(self.player_id);
 
         // Update camera to follow player after physics
         if self.player_id < self.entities.len() {
@@ -930,7 +926,7 @@ impl Ppu {
         // Parallax mountain silhouettes in the background
         // Mountains scroll slower than the camera for depth effect
         let mountain_parallax_factor = 0.3; // Mountains move 30% of camera speed
-        let mountain_offset = self.camera_x * mountain_parallax_factor;
+        let mountain_offset = -self.camera_x * mountain_parallax_factor; // NEGATIVE for proper parallax direction
 
         // Render mountain layers (back to front)
         self.render_mountain_layer(mountain_offset * 0.5, 100, 96u8);  // Far mountains (purple)
@@ -1012,7 +1008,7 @@ impl Ppu {
     fn render_clouds(&mut self) {
         // Render puffy white clouds with parallax scrolling
         let cloud_parallax = 0.2; // Clouds move slower than camera
-        let cloud_offset = self.camera_x * cloud_parallax;
+        let cloud_offset = -self.camera_x * cloud_parallax; // NEGATIVE for proper parallax direction
 
         // Render multiple cloud layers
         self.render_cloud_layer(cloud_offset, 30, 87u8);       // High clouds (light blue-white)
@@ -1077,7 +1073,7 @@ impl Ppu {
     fn render_background_trees(&mut self) {
         // Render stylized background trees with parallax
         let tree_parallax = 0.4; // Trees move slower than foreground
-        let tree_offset = self.camera_x * tree_parallax;
+        let tree_offset = -self.camera_x * tree_parallax; // NEGATIVE for proper parallax direction
 
         // Place trees at regular intervals
         for tree_pos in (0..1200).step_by(80) {
@@ -1175,11 +1171,21 @@ impl Ppu {
 
         let player = &self.entities[self.player_id];
         let screen_center_x = SCREEN_WIDTH as f32 / 2.0;
-        let screen_center_y = SCREEN_HEIGHT as f32 / 2.0;
 
-        // Center camera on player
+        // Follow player horizontally (immediate)
         self.camera_x = player.x + player.width / 2.0 - screen_center_x;
-        self.camera_y = player.y + player.height / 2.0 - screen_center_y;
+
+        // Don't follow player vertically during jumps - keep camera steady
+        // Only center camera vertically if player is far from center
+        let screen_center_y = SCREEN_HEIGHT as f32 / 2.0;
+        let player_screen_y = player.y - self.camera_y;
+
+        // Only adjust camera Y if player is getting close to screen edges
+        if player_screen_y < 50.0 {
+            self.camera_y = player.y - 50.0;
+        } else if player_screen_y > SCREEN_HEIGHT as f32 - 70.0 {
+            self.camera_y = player.y - (SCREEN_HEIGHT as f32 - 70.0);
+        }
 
         // Keep camera within world bounds
         self.camera_x = self.camera_x.max(0.0).min(self.world_width - SCREEN_WIDTH as f32);
@@ -1222,6 +1228,33 @@ impl Ppu {
         }
     }
 
+    fn check_ground_collision(&mut self, entity_index: usize) {
+        if entity_index >= self.entities.len() {
+            return;
+        }
+
+        let entity = &mut self.entities[entity_index];
+
+        // Calculate ground level at entity's center position
+        // Use the same coordinate system as ground rendering: entity world position
+        let entity_center_x = entity.x + entity.width / 2.0;
+        let world_x = entity_center_x; // Entity coordinates are already world coordinates
+        let terrain_height = ((world_x * 0.02).sin() * 5.0) as i32;
+        let ground_level = 200.0 + terrain_height as f32;
+
+        // Check if entity is at or below ground level
+        let entity_bottom = entity.y + entity.height;
+        if entity_bottom >= ground_level && entity.vel_y > 0.0 {
+            // Only snap to ground if falling down (vel_y > 0), not when jumping up
+            entity.y = ground_level - entity.height;
+            entity.vel_y = 0.0;
+            entity.on_ground = true;
+        } else if entity_bottom < ground_level - 3.0 {
+            // Entity is clearly above ground, so not on ground
+            entity.on_ground = false;
+        }
+    }
+
     pub fn add_entity(&mut self, entity_type: u32, x: f32, y: f32, sprite_id: u32) -> usize {
         let entity_type_enum = match entity_type {
             0 => EntityType::Player,
@@ -1243,7 +1276,7 @@ impl Ppu {
 
         let player = &mut self.entities[self.player_id];
         const MOVE_SPEED: f32 = 1.5;  // Horizontal acceleration
-        const JUMP_STRENGTH: f32 = -7.0;  // Negative because Y increases downward
+        const JUMP_STRENGTH: f32 = -10.0;  // Negative because Y increases downward - increased for more visible jump
 
         // Horizontal movement
         if left {
