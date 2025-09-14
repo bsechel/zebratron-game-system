@@ -1,5 +1,9 @@
 # ZebratronGameSystem
 
+<div align="center">
+  <img src="zebratron-game-system.png" alt="ZebratronGameSystem Logo" width="400">
+</div>
+
 A modern 8-bit game system inspired by the NES and Sega Master System, designed to run at 60fps in web browsers using WebAssembly. Built with a focus on making scrolling games and classic arcade-style games easy to develop.
 
 **A project by Niebo Microsystems**
