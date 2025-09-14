@@ -1,0 +1,45 @@
+[package]
+name = "zebratron-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core WebAssembly implementation of the ZebratronGameSystem"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
+js-sys = { workspace = true }
+serde = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde_json = { workspace = true }
+
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { workspace = true, optional = true }
+
+# `wee_alloc` is a tiny allocator for wasm that is only ~1K in code size
+# compared to the default allocator's ~10K. It is slower than the default
+# allocator, however.
+wee_alloc = { workspace = true }
+
+[dependencies.web-sys]
+workspace = true
+features = [
+  "console",
+  "Performance",
+  "CanvasRenderingContext2d",
+  "HtmlCanvasElement",
+  "ImageData",
+  "AudioContext",
+  "AudioBuffer",
+  "GainNode",
+  "OscillatorNode",
+]
+
+[features]
+default = ["console_error_panic_hook"]
+wee_alloc = []

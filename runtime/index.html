@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZebratronGameSystem Demo</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #1a1a1a;
+        color: white;
+        font-family: monospace;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      #gameCanvas {
+        border: 2px solid #444;
+        image-rendering: pixelated;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: crisp-edges;
+      }
+
+      .controls {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+      }
+
+      button {
+        background: #333;
+        color: white;
+        border: 1px solid #555;
+        padding: 10px 20px;
+        cursor: pointer;
+        font-family: monospace;
+      }
+
+      button:hover {
+        background: #555;
+      }
+
+      .info {
+        margin-top: 20px;
+        text-align: center;
+      }
+
+      .debug {
+        margin-top: 20px;
+        background: #222;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 12px;
+        max-width: 640px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎮 ZebratronGameSystem</h1>
+    <p>A modern 8-bit game system running in WebAssembly</p>
+
+    <canvas id="gameCanvas" width="320" height="240"></canvas>
+
+    <div class="controls">
+      <button id="startBtn">Start System</button>
+      <button id="stopBtn">Stop System</button>
+      <button id="resetBtn">Reset System</button>
+    </div>
+
+    <div class="info">
+      <p>Status: <span id="status">Initializing...</span></p>
+      <p>Use arrow keys or WASD to move, Z/Space for A button, X/Shift for B button</p>
+    </div>
+
+    <div class="debug" id="debugInfo">
+      <h3>Debug Info</h3>
+      <div id="cpuState">CPU: Not initialized</div>
+      <div id="frameRate">FPS: 0</div>
+    </div>
+
+    <script type="module" src="/src/demo.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+[package]
+name = "zebratron-asset-converter"
+version = "0.1.0"
+edition = "2021"
+description = "Asset conversion tools for ZebratronGameSystem"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
