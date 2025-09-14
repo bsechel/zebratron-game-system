@@ -278,7 +278,7 @@ pub struct Entity {
 impl Entity {
     pub fn new(entity_type: EntityType, x: f32, y: f32, sprite_id: u32) -> Self {
         let (width, height) = match entity_type {
-            EntityType::Player => (32.0, 32.0),
+            EntityType::Player => (24.0, 20.0),  // Hambert size
             EntityType::Enemy => (24.0, 24.0),
             EntityType::Platform => (64.0, 16.0),
             EntityType::Projectile => (8.0, 8.0),
@@ -463,6 +463,133 @@ impl Ppu {
         self.render_text("Press Enter for color test", 10, 210, 48); // Green text
     }
 
+    fn render_hambert_sprite(&mut self, x: usize, y: usize) {
+        // 24x20 Hambert sprite data from hambertBoy.js
+        let pixel_data = [
+            [0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,2,2,2,1,1,1,1,1,1,1,1,1,2,2,2,1,1,1,1,1,1],
+            [1,1,1,2,3,2,1,1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [0,0,1,1,1,1,1,1,1,1,1,6,6,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],
+            [0,0,0,0,7,7,7,7,7,0,0,0,0,7,7,7,7,7,0,0,0,0,0,0],
+            [0,0,0,0,5,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0],
+            [0,0,0,0,5,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0],
+        ];
+
+        // Hambert color palette mapped to our system
+        let hambert_colors = [
+            0,   // 0 - transparent -> black in our palette
+            80,  // 1 - #888888 gray fur -> gray from our palette
+            0,   // 2 - #000000 eye outline -> black
+            15,  // 3 - #ffffff eye white -> white from our palette
+            0,   // 4 - #000000 black nose -> black
+            16,  // 5 - #cc0000 red boots -> red from our palette
+            120, // 6 - #ff6666 pink tongue -> pink from our palette
+            32,  // 7 - #654321 brown boot tops -> brown from our palette
+        ];
+
+        for (sprite_y, row) in pixel_data.iter().enumerate() {
+            for (sprite_x, &pixel) in row.iter().enumerate() {
+                let screen_x = x + sprite_x;
+                let screen_y = y + sprite_y;
+
+                // Bounds check
+                if screen_x >= SCREEN_WIDTH || screen_y >= SCREEN_HEIGHT {
+                    continue;
+                }
+
+                // Skip transparent pixels (0)
+                if pixel == 0 {
+                    continue;
+                }
+
+                // Get color from our palette
+                let palette_index = hambert_colors.get(pixel as usize).copied().unwrap_or(0);
+                let (r, g, b) = self.get_palette_color(palette_index);
+
+                let pixel_index = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                self.screen_buffer[pixel_index] = r;
+                self.screen_buffer[pixel_index + 1] = g;
+                self.screen_buffer[pixel_index + 2] = b;
+                self.screen_buffer[pixel_index + 3] = 255;
+            }
+        }
+    }
+
+    fn render_hambert_walk_sprite(&mut self, x: usize, y: usize) {
+        // 24x20 Hambert walking sprite data from hambertBoy.js
+        let pixel_data = [
+            [0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,2,2,2,1,1,1,1,1,1,1,1,1,2,2,2,1,1,1,1,1,1],
+            [1,1,1,2,3,2,1,1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [0,0,1,1,1,1,1,1,1,1,1,6,6,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],
+            [0,0,0,0,0,7,7,7,7,0,0,0,0,7,7,7,7,7,0,0,0,0,0,0], // left boot lower
+            [0,0,0,0,0,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0], // walking animation
+            [0,0,0,0,0,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0], // boots shifted
+        ];
+
+        // Same color palette as idle Hambert
+        let hambert_colors = [
+            0,   // 0 - transparent
+            80,  // 1 - gray fur
+            0,   // 2 - eye outline black
+            15,  // 3 - eye white
+            0,   // 4 - black nose
+            16,  // 5 - red boots
+            120, // 6 - pink tongue
+            32,  // 7 - brown boot tops
+        ];
+
+        for (sprite_y, row) in pixel_data.iter().enumerate() {
+            for (sprite_x, &pixel) in row.iter().enumerate() {
+                let screen_x = x + sprite_x;
+                let screen_y = y + sprite_y;
+
+                if screen_x >= SCREEN_WIDTH || screen_y >= SCREEN_HEIGHT {
+                    continue;
+                }
+
+                if pixel == 0 {
+                    continue;
+                }
+
+                let palette_index = hambert_colors.get(pixel as usize).copied().unwrap_or(0);
+                let (r, g, b) = self.get_palette_color(palette_index);
+
+                let pixel_index = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                self.screen_buffer[pixel_index] = r;
+                self.screen_buffer[pixel_index + 1] = g;
+                self.screen_buffer[pixel_index + 2] = b;
+                self.screen_buffer[pixel_index + 3] = 255;
+            }
+        }
+    }
+
     fn render_character_sprite(&mut self, x: usize, y: usize) {
         // Generate 32x32 sprite procedurally to avoid array counting issues
         for sprite_y in 0..32 {
@@ -556,7 +683,7 @@ impl Ppu {
             match entity_type {
                 EntityType::Player => {
                     if screen_x >= 0 && screen_y >= 0 {
-                        self.render_character_sprite(screen_x as usize, screen_y as usize);
+                        self.render_hambert_sprite(screen_x as usize, screen_y as usize);
                     }
                 },
                 EntityType::Platform => {
