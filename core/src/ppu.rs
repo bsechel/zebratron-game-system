@@ -399,12 +399,78 @@ impl Ppu {
             if self.scanline >= 262 {
                 self.scanline = 0;
                 self.frame_count += 1;
+
+                // Update physics once per frame
+                self.update_physics();
+
                 return true; // Frame complete
             }
         }
 
         false
     }
+
+    fn update_physics(&mut self) {
+        const GRAVITY: f32 = 0.4;  // Pixels per frame squared
+        const MAX_FALL_SPEED: f32 = 8.0;  // Terminal velocity
+        const GROUND_LEVEL: f32 = 200.0;  // Simple ground level for now
+
+        for entity in &mut self.entities {
+            if !entity.active {
+                continue;
+            }
+
+            match entity.entity_type {
+                EntityType::Player => {
+                    // Apply gravity
+                    if !entity.on_ground {
+                        entity.vel_y += GRAVITY;
+                        if entity.vel_y > MAX_FALL_SPEED {
+                            entity.vel_y = MAX_FALL_SPEED;
+                        }
+                    }
+
+                    // Apply velocity
+                    entity.x += entity.vel_x;
+                    entity.y += entity.vel_y;
+
+                    // Ground collision (simple for now)
+                    if entity.y + entity.height >= GROUND_LEVEL {
+                        entity.y = GROUND_LEVEL - entity.height;
+                        entity.vel_y = 0.0;
+                        entity.on_ground = true;
+                    } else {
+                        entity.on_ground = false;
+                    }
+
+                    // Platform collision
+                    self.check_platform_collisions(0); // Player is at index 0
+
+                    // Apply friction when on ground
+                    if entity.on_ground {
+                        entity.vel_x *= 0.85; // Friction
+                    } else {
+                        entity.vel_x *= 0.98; // Air resistance
+                    }
+
+                    // Keep within world bounds
+                    entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
+
+                    // Update sprite position for backward compatibility
+                    if entity.entity_type == EntityType::Player {
+                        self.sprite_x = entity.x;
+                        self.sprite_y = entity.y;
+                        self.update_camera_follow_player();
+                    }
+                }
+                _ => {
+                    // Other entity types can have different physics later
+                }
+            }
+        }
+    }
+
+    
 
     pub fn render_frame(&mut self, _memory: &Memory) {
         // Clear screen with background color
@@ -802,23 +868,58 @@ impl Ppu {
             self.sprite_y = player.y;
 
             // Update camera to follow player
-            self.update_camera_follow_player();
+            self.update_camera_follow_player(player);
         }
     }
 
-    fn update_camera_follow_player(&mut self) {
-        if self.player_id < self.entities.len() {
-            let player = &self.entities[self.player_id];
-            let screen_center_x = SCREEN_WIDTH as f32 / 2.0;
-            let screen_center_y = SCREEN_HEIGHT as f32 / 2.0;
+    
 
-            // Center camera on player
-            self.camera_x = player.x + player.width / 2.0 - screen_center_x;
-            self.camera_y = player.y + player.height / 2.0 - screen_center_y;
+    fn update_camera_follow_player(&mut self, player: &Entity) {
+        let screen_center_x = SCREEN_WIDTH as f32 / 2.0;
+        let screen_center_y = SCREEN_HEIGHT as f32 / 2.0;
 
-            // Keep camera within world bounds
-            self.camera_x = self.camera_x.max(0.0).min(self.world_width - SCREEN_WIDTH as f32);
-            self.camera_y = self.camera_y.max(0.0).min(self.world_height - SCREEN_HEIGHT as f32);
+        // Center camera on player
+        self.camera_x = player.x + player.width / 2.0 - screen_center_x;
+        self.camera_y = player.y + player.height / 2.0 - screen_center_y;
+
+        // Keep camera within world bounds
+        self.camera_x = self.camera_x.max(0.0).min(self.world_width - SCREEN_WIDTH as f32);
+        self.camera_y = self.camera_y.max(0.0).min(self.world_height - SCREEN_HEIGHT as f32);
+    }
+
+    fn check_platform_collisions(&mut self, entity_index: usize) {
+        let entity_bounds = {
+            let entity = &self.entities[entity_index];
+            (entity.x, entity.y, entity.x + entity.width, entity.y + entity.height, entity.vel_y)
+        };
+
+        let (ex1, ey1, ex2, ey2, vel_y) = entity_bounds;
+
+        // Check collision with all platform entities
+        for i in 0..self.entities.len() {
+            if i == entity_index {
+                continue;
+            }
+
+            let platform = &self.entities[i];
+            if platform.entity_type != EntityType::Platform || !platform.active {
+                continue;
+            }
+
+            let px1 = platform.x;
+            let py1 = platform.y;
+            let px2 = platform.x + platform.width;
+            let py2 = platform.y + platform.height;
+
+            // Check if entity is falling down onto platform
+            if vel_y > 0.0 && ex1 < px2 && ex2 > px1 && ey2 >= py1 && ey1 < py1 {
+                // Landing on top of platform
+                let entity = &mut self.entities[entity_index];
+                entity.y = py1 - entity.height;
+                entity.vel_y = 0.0;
+                entity.on_ground = true;
+                break;
+            }
         }
     }
 
@@ -837,20 +938,36 @@ impl Ppu {
     }
 
     pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool) {
-        let speed = 2.0; // pixels per frame
+        if self.player_id >= self.entities.len() {
+            return;
+        }
 
-        if up {
-            self.move_sprite(0.0, -speed);
-        }
-        if down {
-            self.move_sprite(0.0, speed);
-        }
+        let player = &mut self.entities[self.player_id];
+        const MOVE_SPEED: f32 = 1.5;  // Horizontal acceleration
+        const JUMP_STRENGTH: f32 = -7.0;  // Negative because Y increases downward
+
+        // Horizontal movement
         if left {
-            self.move_sprite(-speed, 0.0);
+            player.vel_x -= MOVE_SPEED;
+            if player.vel_x < -4.0 {  // Max speed left
+                player.vel_x = -4.0;
+            }
         }
         if right {
-            self.move_sprite(speed, 0.0);
+            player.vel_x += MOVE_SPEED;
+            if player.vel_x > 4.0 {  // Max speed right
+                player.vel_x = 4.0;
+            }
         }
+
+        // Jumping - only when on ground
+        if up && player.on_ground {
+            player.vel_y = JUMP_STRENGTH;
+            player.on_ground = false;
+        }
+
+        // Down can be used later for crouching or dropping through platforms
+        // For now, let's ignore it or use it for debug
     }
 
     fn get_palette_color(&self, index: u8) -> (u8, u8, u8) {
@@ -1057,3 +1174,6 @@ impl Ppu {
         self.render_text(text, x, y, color_index);
     }
 }
+
+
+

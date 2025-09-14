@@ -23,6 +23,13 @@ pub struct Apu {
     sound_test_mode: bool,
     current_note: u8,  // MIDI note number
     current_waveform: u8, // 0=pulse, 1=saw, 2=triangle, 3=sine, 4=noise
+
+    // Demo melody sequencer
+    melody_enabled: bool,
+    melody_step: usize,
+    melody_timer: f32,
+    melody_tempo: f32,  // Steps per second
+    melody_notes: [u8; 16], // MIDI notes for the melody
 }
 
 struct PulseChannel {
@@ -55,6 +62,41 @@ struct DigitalOscillator {
     volume: f32,
     detune: f32,         // Fine tuning offset
     lfsr: u16,          // For noise generation
+    filter: ResonantFilter, // SID-style resonant filter
+    delay: DigitalDelay,    // Digital delay effect
+}
+
+#[derive(Clone)]
+struct ResonantFilter {
+    enabled: bool,
+    filter_type: u8,     // 0=lowpass, 1=highpass, 2=bandpass, 3=notch
+    cutoff: f32,         // 0.0 to 1.0 (maps to 30Hz - 20kHz)
+    resonance: f32,      // 0.0 to 1.0 (0.7+ starts self-oscillation)
+
+    // Filter state variables (biquad implementation)
+    x1: f32, x2: f32,    // Input delay line
+    y1: f32, y2: f32,    // Output delay line
+
+    // Filter coefficients (calculated from cutoff/resonance)
+    a0: f32, a1: f32, a2: f32,
+    b1: f32, b2: f32,
+}
+
+#[derive(Clone)]
+struct DigitalDelay {
+    enabled: bool,
+    delay_time: f32,     // 0.0 to 1.0 (maps to 0ms - 1000ms)
+    feedback: f32,       // 0.0 to 0.95 (0.95+ = infinite feedback)
+    mix: f32,           // 0.0 = dry only, 1.0 = wet only, 0.5 = balanced
+
+    // Delay buffer (circular buffer)
+    buffer: Vec<f32>,
+    buffer_size: usize,
+    write_pos: usize,
+    read_pos: usize,
+
+    // Low-pass filter for analog-style delay character
+    feedback_filter: f32, // Simple one-pole lowpass
 }
 
 #[wasm_bindgen]
@@ -96,6 +138,34 @@ impl Apu {
                 volume: 0.7,
                 detune: 0.0,
                 lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: true,
+                    filter_type: 0,  // Lowpass (classic SID)
+                    cutoff: 0.8,     // Start fairly open
+                    resonance: 0.1,  // Mild resonance to start
+
+                    // Initialize filter state
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+
+                    // Coefficients will be calculated
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.3,        // 300ms default
+                    feedback: 0.3,          // 30% feedback
+                    mix: 0.25,             // 25% wet signal
+
+                    // Initialize delay buffer (1 second max at 44.1kHz)
+                    buffer: vec![0.0; 44100],
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+
+                    feedback_filter: 0.0,
+                },
             },
             master_volume: 0.5,
             sample_rate: 44100.0,
@@ -103,12 +173,49 @@ impl Apu {
             sound_test_mode: false,
             current_note: 69, // A4 = 440Hz
             current_waveform: 0,
+
+            // Initialize demo melody (Russian-style minor melody)
+            melody_enabled: false,
+            melody_step: 0,
+            melody_timer: 0.0,
+            melody_tempo: 3.0, // Moderate tempo - 3 notes per second
+            // Haunting Russian-style melody in D minor
+            // D E♭ F G A♭ B♭ C D (D natural minor scale)
+            melody_notes: [62, 65, 67, 62, 0, 65, 67, 70,   // D F A D rest F A B♭
+                          72, 70, 67, 65, 62, 0, 62, 0],   // C B♭ A F D rest D rest
         }
     }
 
     pub fn step(&mut self) {
         self.frame_counter += 1;
-        // TODO: Implement proper frame sequencer timing
+
+        // Update melody sequencer if enabled
+        if self.melody_enabled {
+            // Advance melody timer (called once per CPU cycle, ~29780 times per frame at 60fps)
+            self.melody_timer += 1.0 / (29780.0 * 60.0); // Actual step rate
+
+            // Check if it's time for next melody step
+            let step_duration = 1.0 / self.melody_tempo;
+            if self.melody_timer >= step_duration {
+                self.melody_timer = 0.0;
+
+                // Move to next melody step
+                self.melody_step = (self.melody_step + 1) % self.melody_notes.len();
+
+                // Get the new note (0 = rest/silence)
+                let note = self.melody_notes[self.melody_step];
+                if note > 0 {
+                    self.current_note = note;
+                    self.test_osc.frequency = Self::midi_to_frequency(note);
+                    self.test_osc.enabled = true;
+                } else {
+                    // Rest - disable oscillator briefly
+                    self.test_osc.enabled = false;
+                }
+            }
+        }
+
+        // TODO: Implement proper frame sequencer timing for other channels
     }
 
     pub fn generate_sample(&mut self) -> f32 {
@@ -212,6 +319,126 @@ impl Apu {
         }
     }
 
+    fn update_filter_coefficients(filter: &mut ResonantFilter, sample_rate: f32) {
+        // Calculate filter coefficients from cutoff and resonance
+        // Classic SID frequency range: ~30Hz to ~20kHz
+        let min_freq = 30.0;
+        let max_freq = 20000.0;
+        let freq = min_freq + filter.cutoff * (max_freq - min_freq);
+
+        let omega = 2.0 * PI * freq / sample_rate;
+        let sin_omega = omega.sin();
+        let cos_omega = omega.cos();
+
+        // Resonance: 0.5 = no resonance, 10.0+ = self-oscillation
+        let q = 0.5 + filter.resonance * 15.0;
+        let alpha = sin_omega / (2.0 * q);
+
+        match filter.filter_type {
+            0 => {
+                // Lowpass (classic SID sound)
+                let norm = 1.0 + alpha;
+                filter.a0 = (1.0 - cos_omega) * 0.5 / norm;
+                filter.a1 = (1.0 - cos_omega) / norm;
+                filter.a2 = (1.0 - cos_omega) * 0.5 / norm;
+                filter.b1 = -2.0 * cos_omega / norm;
+                filter.b2 = (1.0 - alpha) / norm;
+            },
+            1 => {
+                // Highpass
+                let norm = 1.0 + alpha;
+                filter.a0 = (1.0 + cos_omega) * 0.5 / norm;
+                filter.a1 = -(1.0 + cos_omega) / norm;
+                filter.a2 = (1.0 + cos_omega) * 0.5 / norm;
+                filter.b1 = -2.0 * cos_omega / norm;
+                filter.b2 = (1.0 - alpha) / norm;
+            },
+            2 => {
+                // Bandpass
+                let norm = 1.0 + alpha;
+                filter.a0 = sin_omega * 0.5 / norm;
+                filter.a1 = 0.0;
+                filter.a2 = -sin_omega * 0.5 / norm;
+                filter.b1 = -2.0 * cos_omega / norm;
+                filter.b2 = (1.0 - alpha) / norm;
+            },
+            _ => {
+                // Notch (band-reject)
+                let norm = 1.0 + alpha;
+                filter.a0 = 1.0 / norm;
+                filter.a1 = -2.0 * cos_omega / norm;
+                filter.a2 = 1.0 / norm;
+                filter.b1 = -2.0 * cos_omega / norm;
+                filter.b2 = (1.0 - alpha) / norm;
+            }
+        }
+    }
+
+    fn apply_resonant_filter(filter: &mut ResonantFilter, input: f32) -> f32 {
+        if !filter.enabled {
+            return input;
+        }
+
+        // Biquad filter implementation
+        let output = filter.a0 * input + filter.a1 * filter.x1 + filter.a2 * filter.x2
+                    - filter.b1 * filter.y1 - filter.b2 * filter.y2;
+
+        // Update delay lines
+        filter.x2 = filter.x1;
+        filter.x1 = input;
+        filter.y2 = filter.y1;
+        filter.y1 = output;
+
+        // Soft clipping to prevent filter instability at high resonance
+        output.clamp(-2.0, 2.0)
+    }
+
+    fn update_delay_buffer_positions(delay: &mut DigitalDelay, sample_rate: f32) {
+        // Calculate delay time in samples (0ms to 1000ms)
+        let delay_samples = (delay.delay_time * 1000.0 * sample_rate / 1000.0) as usize;
+        let delay_samples = delay_samples.min(delay.buffer_size - 1).max(1);
+
+        // Update read position (circular buffer)
+        delay.read_pos = if delay.write_pos >= delay_samples {
+            delay.write_pos - delay_samples
+        } else {
+            delay.buffer_size - (delay_samples - delay.write_pos)
+        };
+    }
+
+    fn apply_digital_delay(delay: &mut DigitalDelay, input: f32, sample_rate: f32) -> f32 {
+        if !delay.enabled {
+            return input;
+        }
+
+        // Update buffer positions based on delay time
+        Self::update_delay_buffer_positions(delay, sample_rate);
+
+        // Read delayed sample
+        let delayed_sample = delay.buffer[delay.read_pos];
+
+        // Apply feedback with analog-style filtering
+        // Simple one-pole lowpass: y[n] = a*x[n] + (1-a)*y[n-1]
+        let filter_coeff = 0.8; // Darken the feedback (like analog tape)
+        delay.feedback_filter = filter_coeff * delayed_sample + (1.0 - filter_coeff) * delay.feedback_filter;
+
+        // Create feedback signal
+        let feedback_signal = delay.feedback_filter * delay.feedback;
+
+        // Write new sample to buffer (input + feedback)
+        delay.buffer[delay.write_pos] = input + feedback_signal;
+
+        // Advance write position (circular buffer)
+        delay.write_pos = (delay.write_pos + 1) % delay.buffer_size;
+
+        // Mix dry and wet signals
+        let dry = input * (1.0 - delay.mix);
+        let wet = delayed_sample * delay.mix;
+
+        // Soft clipping to prevent digital distortion
+        (dry + wet).clamp(-1.5, 1.5)
+    }
+
     fn generate_digital_oscillator_sample(osc: &mut DigitalOscillator, sample_rate: f32) -> f32 {
         let effective_freq = osc.frequency * (1.0 + osc.detune);
         osc.phase += effective_freq / sample_rate;
@@ -221,7 +448,8 @@ impl Apu {
             osc.phase -= 1.0;
         }
 
-        let sample = match osc.waveform {
+        // Generate raw waveform
+        let raw_sample = match osc.waveform {
             0 => {
                 // Pulse wave (square with variable pulse width)
                 if osc.phase < osc.pulse_width { 1.0 } else { -1.0 }
@@ -254,7 +482,16 @@ impl Apu {
             _ => 0.0,
         };
 
-        sample * osc.volume
+        // Update filter coefficients if needed (for efficiency, could cache this)
+        Self::update_filter_coefficients(&mut osc.filter, sample_rate);
+
+        // Apply resonant filter to the raw waveform
+        let filtered_sample = Self::apply_resonant_filter(&mut osc.filter, raw_sample);
+
+        // Apply digital delay effect
+        let delayed_sample = Self::apply_digital_delay(&mut osc.delay, filtered_sample, sample_rate);
+
+        delayed_sample * osc.volume
     }
 
     // MIDI note to frequency conversion
@@ -273,6 +510,7 @@ impl Apu {
     pub fn exit_sound_test_mode(&mut self) {
         self.sound_test_mode = false;
         self.test_osc.enabled = false;
+        self.melody_enabled = false; // Stop melody when exiting sound test
     }
 
     pub fn sound_test_change_waveform(&mut self, waveform: u8) {
@@ -303,6 +541,106 @@ impl Apu {
 
     pub fn is_sound_test_mode(&self) -> bool {
         self.sound_test_mode
+    }
+
+    // Filter control methods
+    pub fn set_filter_enabled(&mut self, enabled: bool) {
+        self.test_osc.filter.enabled = enabled;
+    }
+
+    pub fn set_filter_cutoff(&mut self, cutoff: f32) {
+        self.test_osc.filter.cutoff = cutoff.clamp(0.0, 1.0);
+    }
+
+    pub fn set_filter_resonance(&mut self, resonance: f32) {
+        self.test_osc.filter.resonance = resonance.clamp(0.0, 1.0);
+    }
+
+    pub fn set_filter_type(&mut self, filter_type: u8) {
+        self.test_osc.filter.filter_type = filter_type.clamp(0, 3);
+    }
+
+    pub fn get_filter_cutoff(&self) -> f32 {
+        self.test_osc.filter.cutoff
+    }
+
+    pub fn get_filter_resonance(&self) -> f32 {
+        self.test_osc.filter.resonance
+    }
+
+    pub fn get_filter_type(&self) -> u8 {
+        self.test_osc.filter.filter_type
+    }
+
+    // Delay control methods
+    pub fn set_delay_enabled(&mut self, enabled: bool) {
+        self.test_osc.delay.enabled = enabled;
+    }
+
+    pub fn set_delay_time(&mut self, delay_time: f32) {
+        self.test_osc.delay.delay_time = delay_time.clamp(0.0, 1.0);
+    }
+
+    pub fn set_delay_feedback(&mut self, feedback: f32) {
+        self.test_osc.delay.feedback = feedback.clamp(0.0, 0.95); // Prevent runaway feedback
+    }
+
+    pub fn set_delay_mix(&mut self, mix: f32) {
+        self.test_osc.delay.mix = mix.clamp(0.0, 1.0);
+    }
+
+    pub fn get_delay_enabled(&self) -> bool {
+        self.test_osc.delay.enabled
+    }
+
+    pub fn get_delay_time(&self) -> f32 {
+        self.test_osc.delay.delay_time
+    }
+
+    pub fn get_delay_feedback(&self) -> f32 {
+        self.test_osc.delay.feedback
+    }
+
+    pub fn get_delay_mix(&self) -> f32 {
+        self.test_osc.delay.mix
+    }
+
+    // Demo melody control methods
+    pub fn set_melody_enabled(&mut self, enabled: bool) {
+        self.melody_enabled = enabled;
+        if enabled {
+            // Enable sound test mode for melody playback
+            self.sound_test_mode = true;
+            self.test_osc.enabled = true;
+            self.test_osc.waveform = self.current_waveform;
+            // Reset melody to beginning when enabling
+            self.melody_step = 0;
+            self.melody_timer = 0.0;
+            // Start with first note
+            let note = self.melody_notes[0];
+            if note > 0 {
+                self.current_note = note;
+                self.test_osc.frequency = Self::midi_to_frequency(note);
+            }
+        } else {
+            // Keep sound test mode active but use manual control
+            if self.sound_test_mode {
+                self.test_osc.frequency = Self::midi_to_frequency(self.current_note);
+                self.test_osc.enabled = true;
+            }
+        }
+    }
+
+    pub fn get_melody_enabled(&self) -> bool {
+        self.melody_enabled
+    }
+
+    pub fn set_melody_tempo(&mut self, tempo: f32) {
+        self.melody_tempo = tempo.clamp(0.5, 4.0); // 0.5 to 4 steps per second
+    }
+
+    pub fn get_melody_tempo(&self) -> f32 {
+        self.melody_tempo
     }
 
     pub fn set_master_volume(&mut self, volume: f32) {

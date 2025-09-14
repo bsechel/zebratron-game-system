@@ -19,6 +19,37 @@ class Demo {
     this.input = new InputManager();
 
     this.setupUI();
+    this.setupSoundTestKeys();
+  }
+
+  private setupSoundTestKeys(): void {
+    // Add direct keyboard event handling for number keys (sound test)
+    document.addEventListener('keydown', (event) => {
+      if (!this.soundTestMode) return;
+
+      switch (event.key) {
+        case '1':
+          console.log('🎵 Switching to Pulse wave (0)');
+          this.system.soundTestChangeWaveform(0);
+          break;
+        case '2':
+          console.log('🎵 Switching to Sawtooth wave (1)');
+          this.system.soundTestChangeWaveform(1);
+          break;
+        case '3':
+          console.log('🎵 Switching to Triangle wave (2)');
+          this.system.soundTestChangeWaveform(2);
+          break;
+        case '4':
+          console.log('🎵 Switching to Sine wave (3)');
+          this.system.soundTestChangeWaveform(3);
+          break;
+        case '5':
+          console.log('🎵 Switching to Noise wave (4)');
+          this.system.soundTestChangeWaveform(4);
+          break;
+      }
+    });
   }
 
   async initialize(): Promise<void> {
@@ -33,13 +64,198 @@ class Demo {
     const startBtn = document.getElementById('startBtn') as HTMLButtonElement;
     const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement;
     const resetBtn = document.getElementById('resetBtn') as HTMLButtonElement;
+    const audioTestBtn = document.getElementById('audioTestBtn') as HTMLButtonElement;
+    const melodyBtn = document.getElementById('melodyBtn') as HTMLButtonElement;
+    const volumeSlider = document.getElementById('volumeSlider') as HTMLInputElement;
+    const volumeValue = document.getElementById('volumeValue') as HTMLSpanElement;
 
     startBtn.addEventListener('click', () => this.start());
     stopBtn.addEventListener('click', () => this.stop());
     resetBtn.addEventListener('click', () => this.reset());
+    audioTestBtn.addEventListener('click', () => this.testAudio());
+    melodyBtn.addEventListener('click', () => this.toggleMelody());
+
+    // Volume control
+    volumeSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const volume = parseInt(target.value) / 100;
+      this.system.setMasterVolume(volume);
+      volumeValue.textContent = `${target.value}%`;
+    });
+
+    this.setupFilterControls();
+    this.setupDelayControls();
   }
 
-  private start(): void {
+  private setupFilterControls(): void {
+    const filterEnabledCheckbox = document.getElementById('filterEnabledCheckbox') as HTMLInputElement;
+    const filterTypeSelect = document.getElementById('filterTypeSelect') as HTMLSelectElement;
+    const filterCutoffSlider = document.getElementById('filterCutoffSlider') as HTMLInputElement;
+    const filterResonanceSlider = document.getElementById('filterResonanceSlider') as HTMLInputElement;
+    const cutoffValue = document.getElementById('cutoffValue') as HTMLSpanElement;
+    const resonanceValue = document.getElementById('resonanceValue') as HTMLSpanElement;
+
+    // Filter enabled/disabled
+    filterEnabledCheckbox.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      this.system.setFilterEnabled(target.checked);
+      console.log(`🎛️ Filter ${target.checked ? 'enabled' : 'disabled'}`);
+    });
+
+    // Filter type selection
+    filterTypeSelect.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement;
+      const filterType = parseInt(target.value);
+      this.system.setFilterType(filterType);
+      const typeNames = ['Lowpass', 'Highpass', 'Bandpass', 'Notch'];
+      console.log(`🎛️ Filter type: ${typeNames[filterType]} (${filterType})`);
+    });
+
+    // Filter cutoff frequency
+    filterCutoffSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const cutoff = parseInt(target.value) / 100;
+      this.system.setFilterCutoff(cutoff);
+      cutoffValue.textContent = `${target.value}%`;
+
+      // Calculate approximate frequency for display
+      const freq = Math.round(30 + cutoff * (20000 - 30));
+      console.log(`🔧 Filter cutoff: ${cutoff.toFixed(2)} (~${freq}Hz)`);
+    });
+
+    // Filter resonance
+    filterResonanceSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const resonance = parseInt(target.value) / 100;
+      this.system.setFilterResonance(resonance);
+      resonanceValue.textContent = `${target.value}%`;
+
+      if (resonance > 0.7) {
+        console.log(`🌊 High resonance: ${resonance.toFixed(2)} - entering self-oscillation!`);
+      } else {
+        console.log(`🌊 Filter resonance: ${resonance.toFixed(2)}`);
+      }
+    });
+  }
+
+  private setupDelayControls(): void {
+    const delayEnabledCheckbox = document.getElementById('delayEnabledCheckbox') as HTMLInputElement;
+    const delayTimeSlider = document.getElementById('delayTimeSlider') as HTMLInputElement;
+    const delayFeedbackSlider = document.getElementById('delayFeedbackSlider') as HTMLInputElement;
+    const delayMixSlider = document.getElementById('delayMixSlider') as HTMLInputElement;
+    const delayTimeValue = document.getElementById('delayTimeValue') as HTMLSpanElement;
+    const delayFeedbackValue = document.getElementById('delayFeedbackValue') as HTMLSpanElement;
+    const delayMixValue = document.getElementById('delayMixValue') as HTMLSpanElement;
+
+    // Delay enabled/disabled
+    delayEnabledCheckbox.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      this.system.setDelayEnabled(target.checked);
+      console.log(`🔊 Delay ${target.checked ? 'enabled' : 'disabled'}`);
+    });
+
+    // Delay time (0-1000ms)
+    delayTimeSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const delayTime = parseInt(target.value) / 100; // 0.0 to 1.0
+      this.system.setDelayTime(delayTime);
+
+      // Convert to milliseconds for display
+      const delayMs = Math.round(delayTime * 1000);
+      delayTimeValue.textContent = `${delayMs}ms`;
+
+      console.log(`⏱️ Delay time: ${delayMs}ms`);
+    });
+
+    // Delay feedback
+    delayFeedbackSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const feedback = parseInt(target.value) / 100;
+      this.system.setDelayFeedback(feedback);
+      delayFeedbackValue.textContent = `${target.value}%`;
+
+      if (feedback > 0.8) {
+        console.log(`🔄 High feedback: ${feedback.toFixed(2)} - entering infinite echo territory!`);
+      } else {
+        console.log(`🔄 Delay feedback: ${feedback.toFixed(2)}`);
+      }
+    });
+
+    // Delay mix (dry/wet balance)
+    delayMixSlider.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      const mix = parseInt(target.value) / 100;
+      this.system.setDelayMix(mix);
+      delayMixValue.textContent = `${target.value}%`;
+
+      let description = '';
+      if (mix < 0.25) description = ' (mostly dry)';
+      else if (mix > 0.75) description = ' (mostly wet)';
+      else if (Math.abs(mix - 0.5) < 0.1) description = ' (balanced)';
+
+      console.log(`🎚️ Delay mix: ${mix.toFixed(2)}${description}`);
+    });
+  }
+
+  private async testAudio(): Promise<void> {
+    console.log('🎵 === AUDIO TEST STARTED ===');
+
+    try {
+      if (!this.system.isAudioAvailable()) {
+        console.log('❌ Audio not available, initializing...');
+        // Try to initialize audio again
+        await this.system.initialize();
+      }
+
+      console.log('🔊 Audio available:', this.system.isAudioAvailable());
+      console.log('🎛️ Audio info:', this.system.getAudioInfo());
+
+      // Force enter sound test mode
+      console.log('🎼 Entering sound test mode...');
+      this.system.enterSoundTestMode();
+      this.soundTestMode = true;
+
+      console.log('✅ Sound test active:', this.system.isSoundTestMode());
+      console.log('🎵 Waveform:', this.system.getCurrentWaveform());
+      console.log('🎵 Note:', this.system.getCurrentNote());
+
+      // Try changing to pulse wave and middle C
+      console.log('🎛️ Setting pulse wave (waveform 0)');
+      this.system.soundTestChangeWaveform(0);
+
+      console.log('🎼 Setting to middle C (note 60)');
+      this.system.soundTestChangeNote(60);
+
+      console.log('🔊 Final state - Waveform:', this.system.getCurrentWaveform(), 'Note:', this.system.getCurrentNote());
+
+      // Check if system is actually running
+      if (!this.system.isRunning()) {
+        console.log('⚠️ System not running, starting...');
+        await this.system.start();
+      }
+
+      // Manual test - try to get samples directly from the APU
+      try {
+        console.log('🧪 Testing direct sample generation...');
+        const debugSamples = this.system.generateDebugSamples(5);
+        console.log('🎵 Direct APU samples:', debugSamples);
+
+        if (debugSamples.every(sample => sample === 0)) {
+          console.log('⚠️ All samples are zero - APU might not be generating audio');
+        } else {
+          console.log('✅ APU is generating non-zero samples!');
+        }
+      } catch (error) {
+        console.error('❌ Direct sample test failed:', error);
+      }
+
+      console.log('🎵 === AUDIO TEST COMPLETE ===');
+    } catch (error) {
+      console.error('❌ Audio test failed:', error);
+    }
+  }
+
+  private async start(): Promise<void> {
     if (this.isRunning) return;
 
     // Create a simple test ROM (just fills memory with test pattern)
@@ -49,7 +265,31 @@ class Demo {
     }
 
     this.system.loadCartridge(testRom);
-    this.system.start();
+
+    try {
+      console.log('🎮 Starting ZebratronGameSystem...');
+      console.log('🔊 Audio available:', this.system.isAudioAvailable());
+
+      await this.system.start();
+
+      console.log('✅ System started successfully!');
+      console.log('🎵 Audio system status:', this.system.isAudioAvailable());
+      console.log('🎛️ Audio info:', this.system.getAudioInfo());
+
+      // Try entering sound test immediately for testing
+      console.log('🧪 Testing sound generation...');
+      this.system.enterSoundTestMode();
+
+      setTimeout(() => {
+        console.log('🎼 Sound test active:', this.system.isSoundTestMode());
+        console.log('🎵 Current waveform:', this.system.getCurrentWaveform());
+        console.log('🎵 Current note:', this.system.getCurrentNote());
+      }, 100);
+
+    } catch (error) {
+      console.error('❌ Failed to start system:', error);
+    }
+
     this.isRunning = true;
 
     this.updateStatus('Running');
@@ -145,12 +385,8 @@ class Demo {
   }
 
   private handleSoundTestControls(): void {
-    // Number keys 1-5 for waveform selection
-    if (this.input.isPressed('Digit1' as any)) this.system.soundTestChangeWaveform(0); // Pulse
-    if (this.input.isPressed('Digit2' as any)) this.system.soundTestChangeWaveform(1); // Saw
-    if (this.input.isPressed('Digit3' as any)) this.system.soundTestChangeWaveform(2); // Triangle
-    if (this.input.isPressed('Digit4' as any)) this.system.soundTestChangeWaveform(3); // Sine
-    if (this.input.isPressed('Digit5' as any)) this.system.soundTestChangeWaveform(4); // Noise
+    // Number keys 1-5 handled by direct keyboard events in setupSoundTestKeys()
+    // This method now only handles arrow key navigation
 
     // Arrow keys for note control
     if (this.input.isPressed(Button.Up)) {
@@ -183,11 +419,17 @@ class Demo {
         const currentNote = this.system.getCurrentNote();
         const noteName = this.midiNoteToName(currentNote);
 
+        const audioInfo = this.system.getAudioInfo();
+        const audioStatus = this.system.isAudioAvailable() ? '🔊 Active' : '🔇 Unavailable';
+
         cpuStateElement.innerHTML = `
           <strong>🎵 SOUND TEST MODE 🎵</strong><br>
+          Audio: ${audioStatus}<br>
           Waveform: ${waveformNames[currentWaveform]} (${currentWaveform + 1})<br>
           Note: ${noteName} (MIDI ${currentNote})<br>
           Frequency: ${this.midiToFrequency(currentNote).toFixed(1)} Hz<br>
+          ${audioInfo ? `Sample Rate: ${audioInfo.sampleRate} Hz<br>` : ''}
+          ${audioInfo ? `Latency: ~${audioInfo.estimatedLatency}ms<br>` : ''}
           <br>
           <small>Controls:</small><br>
           <small>1-5: Change waveform</small><br>
@@ -224,6 +466,37 @@ class Demo {
 
   private midiToFrequency(midiNote: number): number {
     return 440 * Math.pow(2, (midiNote - 69) / 12);
+  }
+
+  private toggleMelody(): void {
+    console.log('🎼 Toggling Russian melody demo...');
+
+    const melodyBtn = document.getElementById('melodyBtn') as HTMLButtonElement;
+    if (!melodyBtn) {
+      console.error('❌ Melody button not found');
+      return;
+    }
+
+    try {
+      const isCurrentlyEnabled = this.system.getMelodyEnabled();
+      console.log('🎵 Current melody state:', isCurrentlyEnabled);
+
+      if (isCurrentlyEnabled) {
+        // Turn off melody
+        this.system.setMelodyEnabled(false);
+        melodyBtn.textContent = '🎼 Play Melody';
+        melodyBtn.style.background = '#660066';
+        console.log('🔇 Russian melody disabled');
+      } else {
+        // Turn on melody
+        this.system.setMelodyEnabled(true);
+        melodyBtn.textContent = '🔇 Stop Melody';
+        melodyBtn.style.background = '#006600';
+        console.log('🎵 Russian melody enabled - haunting D minor melody playing...');
+      }
+    } catch (error) {
+      console.error('❌ Error toggling melody:', error);
+    }
   }
 }
 

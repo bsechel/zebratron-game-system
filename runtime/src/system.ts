@@ -1,10 +1,11 @@
 import init, { ZebratronSystem as WasmSystem } from '../pkg/zebratron_core.js';
+import { AudioManager } from './audio.js';
 
 export class ZebratronSystem {
   private wasmSystem: WasmSystem | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
-  // private audioCtx: AudioContext | null = null;
+  private audioManager: AudioManager | null = null;
   private isInitialized = false;
 
   async initialize(canvasElement?: HTMLCanvasElement): Promise<void> {
@@ -19,8 +20,14 @@ export class ZebratronSystem {
       this.setupCanvas(canvasElement);
     }
 
-    // Set up audio context
-    // this.setupAudio();
+    // Set up audio system
+    console.log('🎧 Initializing AudioManager...');
+    this.audioManager = new AudioManager();
+    await this.audioManager.initialize();
+
+    console.log('🔗 Connecting WASM system to audio...');
+    console.log('WASM system available:', !!this.wasmSystem);
+    this.audioManager.connectSystem(this.wasmSystem);
 
     this.isInitialized = true;
   }
@@ -53,11 +60,26 @@ export class ZebratronSystem {
     return this.wasmSystem.load_cartridge(romData);
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (!this.wasmSystem) {
       throw new Error('System not initialized');
     }
+
     this.wasmSystem.start();
+
+    // Start audio playback (requires user interaction)
+    if (this.audioManager) {
+      try {
+        console.log('🎵 Starting audio playback...');
+        await this.audioManager.start();
+
+        // Make sure the APU is connected to audio output
+        console.log('🔗 Reconnecting APU to audio...');
+        this.audioManager.connectSystem(this.wasmSystem);
+      } catch (error) {
+        console.warn('Could not start audio:', error);
+      }
+    }
   }
 
   stop(): void {
@@ -65,6 +87,11 @@ export class ZebratronSystem {
       throw new Error('System not initialized');
     }
     this.wasmSystem.stop();
+
+    // Stop audio playback
+    if (this.audioManager) {
+      this.audioManager.stop();
+    }
   }
 
   reset(): void {
@@ -114,7 +141,7 @@ export class ZebratronSystem {
     }
     try {
       const state = this.wasmSystem.get_cpu_state();
-      console.log('CPU state from WASM:', state);
+      // Removed excessive logging - only log CPU state when needed for debug display
       return state;
     } catch (error) {
       console.error('Error getting CPU state:', error);
@@ -206,5 +233,179 @@ export class ZebratronSystem {
       throw new Error('System not initialized');
     }
     return this.wasmSystem.is_sound_test_mode();
+  }
+
+  // Filter control methods
+  setFilterEnabled(enabled: boolean): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_filter_enabled(enabled);
+  }
+
+  setFilterCutoff(cutoff: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_filter_cutoff(cutoff);
+  }
+
+  setFilterResonance(resonance: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_filter_resonance(resonance);
+  }
+
+  setFilterType(filterType: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_filter_type(filterType);
+  }
+
+  getFilterCutoff(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_filter_cutoff();
+  }
+
+  getFilterResonance(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_filter_resonance();
+  }
+
+  getFilterType(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_filter_type();
+  }
+
+  // Delay control methods
+  setDelayEnabled(enabled: boolean): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_delay_enabled(enabled);
+  }
+
+  setDelayTime(delayTime: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_delay_time(delayTime);
+  }
+
+  setDelayFeedback(feedback: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_delay_feedback(feedback);
+  }
+
+  setDelayMix(mix: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_delay_mix(mix);
+  }
+
+  getDelayEnabled(): boolean {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_delay_enabled();
+  }
+
+  getDelayTime(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_delay_time();
+  }
+
+  getDelayFeedback(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_delay_feedback();
+  }
+
+  getDelayMix(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_delay_mix();
+  }
+
+  // Demo melody control methods
+  setMelodyEnabled(enabled: boolean): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_melody_enabled(enabled);
+  }
+
+  getMelodyEnabled(): boolean {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_melody_enabled();
+  }
+
+  setMelodyTempo(tempo: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.set_melody_tempo(tempo);
+  }
+
+  getMelodyTempo(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_melody_tempo();
+  }
+
+  // Audio control methods
+  setMasterVolume(volume: number): void {
+    if (this.wasmSystem) {
+      this.wasmSystem.set_master_volume(volume);
+    }
+    if (this.audioManager) {
+      this.audioManager.setVolume(volume);
+    }
+  }
+
+  getMasterVolume(): number {
+    return this.audioManager ? this.audioManager.getVolume() : 0;
+  }
+
+  isAudioAvailable(): boolean {
+    return this.audioManager ? this.audioManager.isAvailable() : false;
+  }
+
+  getAudioInfo(): any {
+    return this.audioManager ? this.audioManager.getAudioInfo() : null;
+  }
+
+  // Debug method to test sample generation
+  generateDebugSamples(count: number = 3): number[] {
+    if (!this.wasmSystem) return [];
+
+    const samples = [];
+    for (let i = 0; i < count; i++) {
+      try {
+        samples.push(this.wasmSystem.generate_audio_sample());
+      } catch (error) {
+        console.error(`Error generating debug sample ${i}:`, error);
+        samples.push(0);
+      }
+    }
+    return samples;
   }
 }

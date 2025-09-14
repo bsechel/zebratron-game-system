@@ -67,11 +67,89 @@
       <button id="startBtn">Start System</button>
       <button id="stopBtn">Stop System</button>
       <button id="resetBtn">Reset System</button>
+      <button id="audioTestBtn" style="background: #006600;">🔊 Test Audio</button>
+      <button id="melodyBtn" style="background: #660066;">🎼 Play Melody</button>
+    </div>
+
+    <div class="controls" style="align-items: center;">
+      <label for="volumeSlider" style="margin-right: 10px;">🔊 Volume:</label>
+      <input type="range" id="volumeSlider" min="0" max="100" value="30" style="width: 200px;">
+      <span id="volumeValue">30%</span>
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; max-width: 800px;">
+      <h3 style="margin: 0 0 15px 0; color: #ffaa00;">🎛️ SID-Style Resonant Filter</h3>
+
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; align-items: center;">
+        <div>
+          <label for="filterTypeSelect" style="display: block; margin-bottom: 5px;">Filter Type:</label>
+          <select id="filterTypeSelect" style="width: 100%; padding: 5px; background: #333; color: white; border: 1px solid #555;">
+            <option value="0">Lowpass (Classic SID)</option>
+            <option value="1">Highpass</option>
+            <option value="2">Bandpass</option>
+            <option value="3">Notch</option>
+          </select>
+        </div>
+
+        <div>
+          <label>
+            <input type="checkbox" id="filterEnabledCheckbox" checked style="margin-right: 8px;">
+            Filter Enabled
+          </label>
+        </div>
+
+        <div>
+          <label for="filterCutoffSlider" style="display: block; margin-bottom: 5px;">🔧 Cutoff: <span id="cutoffValue">80%</span></label>
+          <input type="range" id="filterCutoffSlider" min="0" max="100" value="80" style="width: 100%;">
+        </div>
+
+        <div>
+          <label for="filterResonanceSlider" style="display: block; margin-bottom: 5px;">🌊 Resonance: <span id="resonanceValue">10%</span></label>
+          <input type="range" id="filterResonanceSlider" min="0" max="100" value="10" style="width: 100%;">
+        </div>
+      </div>
+
+      <p style="margin: 15px 0 0 0; font-size: 12px; color: #aaa;">
+        <strong>Tips:</strong> Lowpass removes high frequencies (classic SID bass). High resonance (70%+) creates self-oscillation. Try sweeping cutoff while playing!
+      </p>
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; max-width: 800px;">
+      <h3 style="margin: 0 0 15px 0; color: #00aaff;">🔊 Digital Delay</h3>
+
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; align-items: center;">
+        <div>
+          <label>
+            <input type="checkbox" id="delayEnabledCheckbox" style="margin-right: 8px;">
+            Delay Enabled
+          </label>
+        </div>
+
+        <div>
+          <label for="delayMixSlider" style="display: block; margin-bottom: 5px;">🎚️ Mix: <span id="delayMixValue">25%</span></label>
+          <input type="range" id="delayMixSlider" min="0" max="100" value="25" style="width: 100%;">
+        </div>
+
+        <div>
+          <label for="delayTimeSlider" style="display: block; margin-bottom: 5px;">⏱️ Time: <span id="delayTimeValue">300ms</span></label>
+          <input type="range" id="delayTimeSlider" min="0" max="100" value="30" style="width: 100%;">
+        </div>
+
+        <div>
+          <label for="delayFeedbackSlider" style="display: block; margin-bottom: 5px;">🔄 Feedback: <span id="delayFeedbackValue">30%</span></label>
+          <input type="range" id="delayFeedbackSlider" min="0" max="95" value="30" style="width: 100%;">
+        </div>
+      </div>
+
+      <p style="margin: 15px 0 0 0; font-size: 12px; color: #aaa;">
+        <strong>Tips:</strong> Mix controls dry/wet balance. Time sets delay length (0-1000ms). High feedback (80%+) creates infinite echoes!
+      </p>
     </div>
 
     <div class="info">
       <p>Status: <span id="status">Initializing...</span></p>
       <p>Use arrow keys or WASD to move, Z/Space for A button, X/Shift for B button</p>
+      <p><strong>🎵 Enter sound test:</strong> Tab key | <strong>Waveforms:</strong> 1-5 keys | <strong>Notes:</strong> ↑↓ semitones, ←→ octaves</p>
     </div>
 
     <div class="debug" id="debugInfo">

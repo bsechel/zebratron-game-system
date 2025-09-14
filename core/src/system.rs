@@ -181,4 +181,83 @@ impl ZebratronSystem {
     pub fn is_sound_test_mode(&self) -> bool {
         self.apu.is_sound_test_mode()
     }
+
+    // Filter control methods
+    pub fn set_filter_enabled(&mut self, enabled: bool) {
+        self.apu.set_filter_enabled(enabled);
+    }
+
+    pub fn set_filter_cutoff(&mut self, cutoff: f32) {
+        self.apu.set_filter_cutoff(cutoff);
+    }
+
+    pub fn set_filter_resonance(&mut self, resonance: f32) {
+        self.apu.set_filter_resonance(resonance);
+    }
+
+    pub fn set_filter_type(&mut self, filter_type: u8) {
+        self.apu.set_filter_type(filter_type);
+    }
+
+    pub fn get_filter_cutoff(&self) -> f32 {
+        self.apu.get_filter_cutoff()
+    }
+
+    pub fn get_filter_resonance(&self) -> f32 {
+        self.apu.get_filter_resonance()
+    }
+
+    pub fn get_filter_type(&self) -> u8 {
+        self.apu.get_filter_type()
+    }
+
+    // Delay control methods
+    pub fn set_delay_enabled(&mut self, enabled: bool) {
+        self.apu.set_delay_enabled(enabled);
+    }
+
+    pub fn set_delay_time(&mut self, delay_time: f32) {
+        self.apu.set_delay_time(delay_time);
+    }
+
+    pub fn set_delay_feedback(&mut self, feedback: f32) {
+        self.apu.set_delay_feedback(feedback);
+    }
+
+    pub fn set_delay_mix(&mut self, mix: f32) {
+        self.apu.set_delay_mix(mix);
+    }
+
+    pub fn get_delay_enabled(&self) -> bool {
+        self.apu.get_delay_enabled()
+    }
+
+    pub fn get_delay_time(&self) -> f32 {
+        self.apu.get_delay_time()
+    }
+
+    pub fn get_delay_feedback(&self) -> f32 {
+        self.apu.get_delay_feedback()
+    }
+
+    pub fn get_delay_mix(&self) -> f32 {
+        self.apu.get_delay_mix()
+    }
+
+    // Demo melody control methods
+    pub fn set_melody_enabled(&mut self, enabled: bool) {
+        self.apu.set_melody_enabled(enabled);
+    }
+
+    pub fn get_melody_enabled(&self) -> bool {
+        self.apu.get_melody_enabled()
+    }
+
+    pub fn set_melody_tempo(&mut self, tempo: f32) {
+        self.apu.set_melody_tempo(tempo);
+    }
+
+    pub fn get_melody_tempo(&self) -> f32 {
+        self.apu.get_melody_tempo()
+    }
 }
