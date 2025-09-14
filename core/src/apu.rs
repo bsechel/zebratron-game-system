@@ -1,4 +1,5 @@
 use wasm_bindgen::prelude::*;
+use std::f32::consts::PI;
 
 #[wasm_bindgen]
 pub struct Apu {
@@ -8,12 +9,20 @@ pub struct Apu {
     triangle: TriangleChannel,
     noise: NoiseChannel,
 
+    // New digital oscillator for sound test
+    test_osc: DigitalOscillator,
+
     // Global audio settings
     master_volume: f32,
     sample_rate: f32,
 
     // Frame counter for timing
     frame_counter: u32,
+
+    // Sound test mode
+    sound_test_mode: bool,
+    current_note: u8,  // MIDI note number
+    current_waveform: u8, // 0=pulse, 1=saw, 2=triangle, 3=sine, 4=noise
 }
 
 struct PulseChannel {
@@ -35,6 +44,17 @@ struct NoiseChannel {
     volume: u8,
     period: u16,
     shift_register: u16,
+}
+
+struct DigitalOscillator {
+    enabled: bool,
+    frequency: f32,
+    waveform: u8,        // 0=pulse, 1=saw, 2=triangle, 3=sine, 4=noise
+    phase: f32,
+    pulse_width: f32,    // For pulse wave (0.0 to 1.0)
+    volume: f32,
+    detune: f32,         // Fine tuning offset
+    lfsr: u16,          // For noise generation
 }
 
 #[wasm_bindgen]
@@ -67,9 +87,22 @@ impl Apu {
                 period: 1,
                 shift_register: 1,
             },
+            test_osc: DigitalOscillator {
+                enabled: false,
+                frequency: 440.0,
+                waveform: 0,
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.7,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+            },
             master_volume: 0.5,
             sample_rate: 44100.0,
             frame_counter: 0,
+            sound_test_mode: false,
+            current_note: 69, // A4 = 440Hz
+            current_waveform: 0,
         }
     }
 
@@ -81,24 +114,32 @@ impl Apu {
     pub fn generate_sample(&mut self) -> f32 {
         let mut sample = 0.0;
 
-        // Generate pulse channel 1
-        if self.pulse1.enabled {
-            sample += Self::generate_pulse_sample(&mut self.pulse1, self.sample_rate);
-        }
+        if self.sound_test_mode {
+            // In sound test mode, only use the test oscillator
+            if self.test_osc.enabled {
+                sample += Self::generate_digital_oscillator_sample(&mut self.test_osc, self.sample_rate);
+            }
+        } else {
+            // Normal game mode - use all channels
+            // Generate pulse channel 1
+            if self.pulse1.enabled {
+                sample += Self::generate_pulse_sample(&mut self.pulse1, self.sample_rate);
+            }
 
-        // Generate pulse channel 2
-        if self.pulse2.enabled {
-            sample += Self::generate_pulse_sample(&mut self.pulse2, self.sample_rate);
-        }
+            // Generate pulse channel 2
+            if self.pulse2.enabled {
+                sample += Self::generate_pulse_sample(&mut self.pulse2, self.sample_rate);
+            }
 
-        // Generate triangle channel
-        if self.triangle.enabled {
-            sample += Self::generate_triangle_sample(&mut self.triangle, self.sample_rate);
-        }
+            // Generate triangle channel
+            if self.triangle.enabled {
+                sample += Self::generate_triangle_sample(&mut self.triangle, self.sample_rate);
+            }
 
-        // Generate noise channel
-        if self.noise.enabled {
-            sample += Self::generate_noise_sample(&mut self.noise);
+            // Generate noise channel
+            if self.noise.enabled {
+                sample += Self::generate_noise_sample(&mut self.noise);
+            }
         }
 
         sample * self.master_volume
@@ -169,6 +210,99 @@ impl Apu {
             }
             _ => {}
         }
+    }
+
+    fn generate_digital_oscillator_sample(osc: &mut DigitalOscillator, sample_rate: f32) -> f32 {
+        let effective_freq = osc.frequency * (1.0 + osc.detune);
+        osc.phase += effective_freq / sample_rate;
+
+        // Keep phase in 0.0 to 1.0 range
+        while osc.phase >= 1.0 {
+            osc.phase -= 1.0;
+        }
+
+        let sample = match osc.waveform {
+            0 => {
+                // Pulse wave (square with variable pulse width)
+                if osc.phase < osc.pulse_width { 1.0 } else { -1.0 }
+            },
+            1 => {
+                // Sawtooth wave
+                2.0 * osc.phase - 1.0
+            },
+            2 => {
+                // Triangle wave
+                if osc.phase < 0.5 {
+                    4.0 * osc.phase - 1.0
+                } else {
+                    3.0 - 4.0 * osc.phase
+                }
+            },
+            3 => {
+                // Sine wave
+                (osc.phase * 2.0 * PI).sin()
+            },
+            4 => {
+                // Digital noise (LFSR)
+                let feedback = ((osc.lfsr & 1) ^ ((osc.lfsr >> 1) & 1)) != 0;
+                osc.lfsr >>= 1;
+                if feedback {
+                    osc.lfsr |= 0x4000;
+                }
+                if (osc.lfsr & 1) != 0 { 1.0 } else { -1.0 }
+            },
+            _ => 0.0,
+        };
+
+        sample * osc.volume
+    }
+
+    // MIDI note to frequency conversion
+    fn midi_to_frequency(note: u8) -> f32 {
+        440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+    }
+
+    // Sound test control methods
+    pub fn enter_sound_test_mode(&mut self) {
+        self.sound_test_mode = true;
+        self.test_osc.enabled = true;
+        self.test_osc.frequency = Self::midi_to_frequency(self.current_note);
+        self.test_osc.waveform = self.current_waveform;
+    }
+
+    pub fn exit_sound_test_mode(&mut self) {
+        self.sound_test_mode = false;
+        self.test_osc.enabled = false;
+    }
+
+    pub fn sound_test_change_waveform(&mut self, waveform: u8) {
+        self.current_waveform = waveform.clamp(0, 4);
+        self.test_osc.waveform = self.current_waveform;
+    }
+
+    pub fn sound_test_change_note(&mut self, note: u8) {
+        self.current_note = note.clamp(21, 108); // Piano range A0 to C8
+        self.test_osc.frequency = Self::midi_to_frequency(self.current_note);
+    }
+
+    pub fn sound_test_set_pulse_width(&mut self, width: f32) {
+        self.test_osc.pulse_width = width.clamp(0.05, 0.95);
+    }
+
+    pub fn sound_test_set_detune(&mut self, detune: f32) {
+        self.test_osc.detune = detune.clamp(-0.5, 0.5);
+    }
+
+    pub fn get_current_waveform(&self) -> u8 {
+        self.current_waveform
+    }
+
+    pub fn get_current_note(&self) -> u8 {
+        self.current_note
+    }
+
+    pub fn is_sound_test_mode(&self) -> bool {
+        self.sound_test_mode
     }
 
     pub fn set_master_volume(&mut self, volume: f32) {

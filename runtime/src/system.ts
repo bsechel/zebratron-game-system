@@ -150,4 +150,61 @@ export class ZebratronSystem {
     }
     this.wasmSystem.toggle_color_test();
   }
+
+  // Sound test methods
+  enterSoundTestMode(): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.enter_sound_test_mode();
+  }
+
+  exitSoundTestMode(): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.exit_sound_test_mode();
+  }
+
+  soundTestChangeWaveform(waveform: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.sound_test_change_waveform(waveform);
+  }
+
+  soundTestChangeNote(note: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.sound_test_change_note(note);
+  }
+
+  soundTestSetPulseWidth(width: number): void {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    this.wasmSystem.sound_test_set_pulse_width(width);
+  }
+
+  getCurrentWaveform(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_current_waveform();
+  }
+
+  getCurrentNote(): number {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.get_current_note();
+  }
+
+  isSoundTestMode(): boolean {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.is_sound_test_mode();
+  }
 }

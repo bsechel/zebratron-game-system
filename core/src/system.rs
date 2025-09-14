@@ -148,4 +148,37 @@ impl ZebratronSystem {
     pub fn toggle_color_test(&mut self) {
         self.ppu.toggle_color_test_mode();
     }
+
+    // Sound test methods
+    pub fn enter_sound_test_mode(&mut self) {
+        self.apu.enter_sound_test_mode();
+    }
+
+    pub fn exit_sound_test_mode(&mut self) {
+        self.apu.exit_sound_test_mode();
+    }
+
+    pub fn sound_test_change_waveform(&mut self, waveform: u8) {
+        self.apu.sound_test_change_waveform(waveform);
+    }
+
+    pub fn sound_test_change_note(&mut self, note: u8) {
+        self.apu.sound_test_change_note(note);
+    }
+
+    pub fn sound_test_set_pulse_width(&mut self, width: f32) {
+        self.apu.sound_test_set_pulse_width(width);
+    }
+
+    pub fn get_current_waveform(&self) -> u8 {
+        self.apu.get_current_waveform()
+    }
+
+    pub fn get_current_note(&self) -> u8 {
+        self.apu.get_current_note()
+    }
+
+    pub fn is_sound_test_mode(&self) -> bool {
+        self.apu.is_sound_test_mode()
+    }
 }
