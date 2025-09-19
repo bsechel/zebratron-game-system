@@ -70,6 +70,9 @@ impl ZebratronCartridgeSystem {
         loop {
             let frame_complete = self.ppu.step(&self.memory);
 
+            // Step APU for sound effect processing
+            self.apu.step();
+
             if frame_complete {
                 self.frame_ready = true;
 
@@ -80,6 +83,9 @@ impl ZebratronCartridgeSystem {
 
                 // Sync cartridge data with PPU
                 self.sync_cartridge_to_ppu();
+
+                // Process cartridge audio commands
+                self.process_cartridge_audio();
 
                 return true;
             }
@@ -94,43 +100,118 @@ impl ZebratronCartridgeSystem {
 
             // Sync cartridge data with PPU
             self.sync_cartridge_to_ppu();
+
+            // Process cartridge audio commands
+            self.process_cartridge_audio();
         }
     }
 
     fn sync_cartridge_to_ppu(&mut self) {
         if let Some(ref cartridge) = self.cartridge {
-            // Update PPU scroll position based on cartridge camera
-            let camera_x = cartridge.get_camera_x();
-            let camera_y = cartridge.get_camera_y();
-            self.ppu.set_scroll(camera_x, camera_y);
+            let game_state = cartridge.get_game_state();
 
-            // Clear existing sprites
-            self.ppu.clear_sprites();
+            // Set PPU mode based on game state
+            if game_state == 0 || game_state == 2 { // Intro or Interlude
+                self.ppu.set_intro_mode(true);
+                let intro_text = cartridge.get_intro_text();
+                self.ppu.set_intro_text(intro_text);
+                // Reset scroll for intro screen
+                self.ppu.set_scroll(0.0, 0.0);
+            } else { // Playing
+                self.ppu.set_intro_mode(false);
 
-            // Add cartridge entities as sprites to PPU
-            for i in 0..cartridge.get_entity_count() {
-                if let Some(entity_data) = cartridge.get_entity_data(i) {
-                    let x = js_sys::Reflect::get(&entity_data, &"x".into())
-                        .unwrap()
-                        .as_f64()
-                        .unwrap_or(0.0) as f32;
-                    let y = js_sys::Reflect::get(&entity_data, &"y".into())
-                        .unwrap()
-                        .as_f64()
-                        .unwrap_or(0.0) as f32;
-                    let sprite_id = js_sys::Reflect::get(&entity_data, &"sprite_id".into())
-                        .unwrap()
-                        .as_f64()
-                        .unwrap_or(0.0) as u32;
-                    let active = js_sys::Reflect::get(&entity_data, &"active".into())
-                        .unwrap()
-                        .as_bool()
-                        .unwrap_or(false);
+                // Update PPU scroll position based on cartridge camera
+                let camera_x = cartridge.get_camera_x();
+                let camera_y = cartridge.get_camera_y();
+                self.ppu.set_scroll(camera_x, camera_y);
 
-                    self.ppu.add_sprite(x, y, sprite_id, active);
+                // Clear existing sprites
+                self.ppu.clear_sprites();
+
+                // Add cartridge entities as sprites to PPU
+                for i in 0..cartridge.get_entity_count() {
+                    if let Some(entity_data) = cartridge.get_entity_data(i) {
+                        let x = js_sys::Reflect::get(&entity_data, &"x".into())
+                            .unwrap()
+                            .as_f64()
+                            .unwrap_or(0.0) as f32;
+                        let y = js_sys::Reflect::get(&entity_data, &"y".into())
+                            .unwrap()
+                            .as_f64()
+                            .unwrap_or(0.0) as f32;
+                        let sprite_id = js_sys::Reflect::get(&entity_data, &"sprite_id".into())
+                            .unwrap()
+                            .as_f64()
+                            .unwrap_or(0.0) as u32;
+                        let active = js_sys::Reflect::get(&entity_data, &"active".into())
+                            .unwrap()
+                            .as_bool()
+                            .unwrap_or(false);
+
+                        self.ppu.add_sprite(x, y, sprite_id, active);
+                    }
                 }
             }
         }
+    }
+
+    fn process_cartridge_audio(&mut self) {
+        // Get pending sounds first
+        let pending_sounds = if let Some(ref cartridge) = self.cartridge {
+            cartridge.get_pending_sounds()
+        } else {
+            Vec::new()
+        };
+
+        // Process each sound effect
+        for sound_id in pending_sounds {
+            self.play_sound_effect(sound_id);
+        }
+
+        // Clear processed sounds
+        if let Some(ref mut cartridge) = self.cartridge {
+            cartridge.clear_pending_sounds();
+        }
+    }
+
+    fn play_sound_effect(&mut self, sound_id: u32) {
+        // Map sound IDs to APU actions
+        match sound_id {
+            0 => self.play_jump_sound(),      // Jump
+            1 => self.play_land_sound(),      // Land
+            2 => self.play_collect_sound(),   // Collect
+            3 => self.play_enemy_hit_sound(), // Enemy hit
+            4 => self.play_shuriken_sound(),  // Shuriken throw
+            _ => {}, // Unknown sound
+        }
+    }
+
+    fn play_jump_sound(&mut self) {
+        // Rising pitch sweep from C4 to C6 over 0.3 seconds
+        self.apu.play_sound_effect(60, 84, 1, 0.3); // C4 to C6, sawtooth, 300ms
+    }
+
+    fn play_land_sound(&mut self) {
+        // Short downward thud for landing
+        self.apu.play_sound_effect(55, 40, 0, 0.15); // G3 to E2, pulse wave, 150ms
+    }
+
+    fn play_collect_sound(&mut self) {
+        // Pleasant pickup sound
+        self.apu.sound_test_change_waveform(3); // Sine wave
+        self.apu.sound_test_change_note(72);    // C5
+    }
+
+    fn play_enemy_hit_sound(&mut self) {
+        // Sharp hit sound
+        self.apu.sound_test_change_waveform(4); // Noise
+        self.apu.sound_test_change_note(60);    // C4
+    }
+
+    fn play_shuriken_sound(&mut self) {
+        // Whoosh sound for projectile
+        self.apu.sound_test_change_waveform(2); // Triangle wave
+        self.apu.sound_test_change_note(55);    // G3
     }
 
     pub fn render(&mut self) {
@@ -206,6 +287,10 @@ impl ZebratronCartridgeSystem {
             samples.push(self.apu.generate_sample());
         }
         samples
+    }
+
+    pub fn generate_audio_sample(&mut self) -> f32 {
+        self.apu.generate_sample()
     }
 
     // Filter controls

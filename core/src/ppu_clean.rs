@@ -283,6 +283,10 @@ pub struct Ppu {
 
     // Demo mode toggle
     color_test_mode: bool,
+
+    // Intro/interlude screen mode
+    intro_mode: bool,
+    intro_text: String,
 }
 
 impl Ppu {
@@ -301,6 +305,8 @@ impl Ppu {
             frame_count: 0,
             sprites: Vec::new(),
             color_test_mode: false,
+            intro_mode: false,
+            intro_text: String::new(),
         }
     }
 
@@ -359,10 +365,21 @@ impl Ppu {
         self.color_test_mode
     }
 
+    // Intro/interlude screen mode
+    pub fn set_intro_mode(&mut self, intro_mode: bool) {
+        self.intro_mode = intro_mode;
+    }
+
+    pub fn set_intro_text(&mut self, text: String) {
+        self.intro_text = text;
+    }
+
     // Rendering
     pub fn render(&mut self) {
         if self.color_test_mode {
             self.render_color_test();
+        } else if self.intro_mode {
+            self.render_intro_screen();
         } else {
             self.render_game();
         }
@@ -636,68 +653,47 @@ impl Ppu {
     }
 
     fn get_hambert_pixel(&self, x: u32, y: u32) -> u8 {
-        // Hambert character sprite (24x20 pixels)
-        // Simple pixelated character design
-
+        // Original Hambert Boy sprite data (24x20 pixels) from hambertBoy.js
         if x >= 24 || y >= 20 {
             return 0; // Transparent outside bounds
         }
 
-        // Hambert sprite data - defining a cute pixelated character
-        match y {
-            // Head area (rows 0-7)
-            0..=1 => {
-                if x >= 8 && x < 16 {
-                    112 // Skin tone for head
-                } else {
-                    0 // Transparent
-                }
-            },
-            2..=6 => {
-                match x {
-                    6..=8 | 15..=17 => 112, // Skin tone (head sides)
-                    9..=10 | 13..=14 => 1,  // Eyes (black)
-                    11..=12 => 112,         // Nose area (skin)
-                    _ => 0,                 // Transparent
-                }
-            },
-            7 => {
-                if x >= 8 && x < 16 {
-                    if x >= 10 && x <= 13 {
-                        16 // Red mouth
-                    } else {
-                        112 // Skin
-                    }
-                } else {
-                    0 // Transparent
-                }
-            },
-            // Body area (rows 8-15)
-            8..=11 => {
-                match x {
-                    7..=9 | 14..=16 => 17,  // Arms (darker red)
-                    10..=13 => 20,          // Body (bright red shirt)
-                    _ => 0,                 // Transparent
-                }
-            },
-            12..=15 => {
-                if x >= 10 && x < 14 {
-                    83 // Blue pants
-                } else if x >= 8 && x < 10 || x >= 14 && x < 16 {
-                    17 // Arms continuing
-                } else {
-                    0 // Transparent
-                }
-            },
-            // Legs area (rows 16-19)
-            16..=19 => {
-                match x {
-                    9..=10 | 13..=14 => 83, // Blue pants/legs
-                    8 | 11..=12 | 15 => 1,  // Black shoes/outline
-                    _ => 0,                 // Transparent
-                }
-            },
-            _ => 0, // Transparent
+        // Original pixel data array from hambertBoy.js
+        let pixel_data = [
+            [0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,2,2,2,1,1,1,1,1,1,1,1,1,2,2,2,1,1,1,1,1,1],
+            [1,1,1,2,3,2,1,1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,4,4,4,1,1,1,1,1,1,1,1,1,1,1],
+            [0,0,1,1,1,1,1,1,1,1,1,6,6,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],
+            [0,0,0,0,7,7,7,7,7,0,0,0,0,7,7,7,7,7,0,0,0,0,0,0],
+            [0,0,0,0,5,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0],
+            [0,0,0,0,5,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0],
+        ];
+
+        // Original Hambert color palette mapping
+        let pixel = pixel_data[y as usize][x as usize];
+        match pixel {
+            0 => 0,   // transparent
+            1 => 10,  // mid-light gray fur
+            2 => 0,   // black eye outline
+            3 => 15,  // white eye
+            4 => 0,   // black nose
+            5 => 16,  // red boots
+            6 => 120, // pink tongue
+            7 => 32,  // brown boot tops
+            _ => 0,   // transparent fallback
         }
     }
 
@@ -870,6 +866,86 @@ impl Ppu {
                 self.screen_buffer[buffer_index + 2] = color.2;
                 self.screen_buffer[buffer_index + 3] = 255;
             }
+        }
+    }
+
+    fn render_intro_screen(&mut self) {
+        // Clear screen with dark blue background
+        let bg_color = MASTER_PALETTE[82]; // Dark blue from palette
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render large Hambert sprite in center of screen
+        let sprite_scale = 3; // Make it 3x larger (72x60 pixels)
+        let sprite_x = (SCREEN_WIDTH as i32 - 24 * sprite_scale) / 2;
+        let sprite_y = 50; // Position it in upper portion of screen
+
+        self.render_large_hambert_sprite(sprite_x, sprite_y, sprite_scale);
+
+        // Render intro text below the sprite
+        let text_y = sprite_y + 60 * sprite_scale + 20; // Below the large sprite
+        let text_color = MASTER_PALETTE[15]; // White
+        self.render_intro_text(text_y, text_color);
+    }
+
+    fn render_large_hambert_sprite(&mut self, base_x: i32, base_y: i32, scale: i32) {
+        // Render scaled up Hambert sprite using the original sprite data
+        for py in 0..20 { // Original sprite height
+            for px in 0..24 { // Original sprite width
+                let color_index = self.get_hambert_pixel(px, py);
+                if color_index > 0 { // Only render non-transparent pixels
+                    let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+
+                    // Scale up the pixel by drawing a scale x scale block
+                    for sy in 0..scale {
+                        for sx in 0..scale {
+                            let screen_x = base_x + (px as i32 * scale) + sx;
+                            let screen_y = base_y + (py as i32 * scale) + sy;
+
+                            if screen_x >= 0 && screen_x < SCREEN_WIDTH as i32 &&
+                               screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
+                                let buffer_index = (screen_y as usize * SCREEN_WIDTH + screen_x as usize) * 4;
+                                if buffer_index + 3 < self.screen_buffer.len() {
+                                    self.screen_buffer[buffer_index] = color.0;
+                                    self.screen_buffer[buffer_index + 1] = color.1;
+                                    self.screen_buffer[buffer_index + 2] = color.2;
+                                    self.screen_buffer[buffer_index + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_intro_text(&mut self, y: i32, color: (u8, u8, u8)) {
+        // Clone the text to avoid borrowing issues
+        let text = self.intro_text.clone();
+
+        // Don't render anything if text is empty
+        if text.is_empty() {
+            return;
+        }
+
+        // Center the text horizontally
+        let text_width = text.len() * 8; // 8 pixels per character
+        let text_x = (SCREEN_WIDTH as i32 - text_width as i32) / 2;
+
+        // Make sure the position is valid
+        let safe_x = text_x.max(0) as usize;
+        let safe_y = y.max(0) as usize;
+
+        // Render the intro text in a visible position (test with fixed position first)
+        self.render_text(&text, 20, 200, color);
+
+        // Also render at the calculated center position
+        if safe_y < SCREEN_HEIGHT && safe_x < SCREEN_WIDTH {
+            self.render_text(&text, safe_x, safe_y, color);
         }
     }
 

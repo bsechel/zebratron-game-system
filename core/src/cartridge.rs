@@ -1,5 +1,23 @@
 use wasm_bindgen::prelude::*;
 
+// Sound effect IDs for the Hambert game
+#[derive(Clone, Copy)]
+pub enum SoundEffect {
+    Jump = 0,
+    Land = 1,
+    Collect = 2,
+    EnemyHit = 3,
+    ShurikenThrow = 4,
+}
+
+// Audio commands that cartridges can send to the console
+pub trait AudioCommands {
+    fn play_sound_effect(&mut self, sound_id: u32);
+    fn play_music(&mut self, music_id: u32);
+    fn stop_music(&mut self);
+    fn set_music_volume(&mut self, volume: f32);
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum EntityType {
     Player,
@@ -94,6 +112,13 @@ pub struct SpriteData {
     pub active: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum GameState {
+    Intro,
+    Playing,
+    Interlude,
+}
+
 // The Hambert cartridge - extracted game logic
 #[wasm_bindgen]
 pub struct HambertCartridge {
@@ -105,6 +130,13 @@ pub struct HambertCartridge {
     world_height: f32,
     pending_shuriken: Vec<Entity>,
     frame_count: u64,
+    pending_sounds: Vec<SoundEffect>,
+
+    // Game state management
+    game_state: GameState,
+    text_timer: f32,
+    text_index: usize,
+    current_level: u32,
 }
 
 #[wasm_bindgen]
@@ -120,6 +152,13 @@ impl HambertCartridge {
             world_height: 480.0,
             pending_shuriken: Vec::new(),
             frame_count: 0,
+            pending_sounds: Vec::new(),
+
+            // Start with intro screen
+            game_state: GameState::Intro,
+            text_timer: 0.0,
+            text_index: 0,
+            current_level: 1,
         };
 
         // Initialize the game world
@@ -157,20 +196,30 @@ impl HambertCartridge {
     pub fn update_game(&mut self, up: bool, down: bool, left: bool, right: bool) {
         self.frame_count += 1;
 
-        // Handle input
-        self.handle_input(up, down, left, right);
+        match self.game_state {
+            GameState::Intro => {
+                self.update_intro_screen(up, down, left, right);
+            },
+            GameState::Playing => {
+                // Handle input
+                self.handle_input(up, down, left, right);
 
-        // Update physics
-        self.update_physics();
+                // Update physics
+                self.update_physics();
 
-        // Spawn ninjas
-        self.update_ninja_spawning();
+                // Spawn ninjas
+                self.update_ninja_spawning();
 
-        // Add pending shuriken
-        self.entities.extend(self.pending_shuriken.drain(..));
+                // Add pending shuriken
+                self.entities.extend(self.pending_shuriken.drain(..));
 
-        // Update camera to follow player
-        self.update_camera();
+                // Update camera to follow player
+                self.update_camera();
+            },
+            GameState::Interlude => {
+                self.update_interlude_screen(up, down, left, right);
+            },
+        }
     }
 
     fn handle_input(&mut self, up: bool, _down: bool, left: bool, right: bool) {
@@ -180,27 +229,28 @@ impl HambertCartridge {
 
         let player = &mut self.entities[self.player_id];
 
-        // Horizontal movement
+        // Horizontal movement (slower acceleration for deliberate control)
         if left {
-            player.vel_x -= 0.5;
+            player.vel_x -= 0.2;
         }
         if right {
-            player.vel_x += 0.5;
+            player.vel_x += 0.2;
         }
 
-        // Jumping
+        // Jumping (higher jump, more satisfying)
         if up && player.on_ground {
-            player.vel_y = -12.0;
+            player.vel_y = -6.5;
             player.on_ground = false;
+            self.pending_sounds.push(SoundEffect::Jump);
         }
 
-        // Clamp horizontal velocity
-        player.vel_x = player.vel_x.max(-6.0).min(6.0);
+        // Clamp horizontal velocity (slower max speed)
+        player.vel_x = player.vel_x.max(-2.8).min(2.8);
     }
 
     fn update_physics(&mut self) {
-        const GRAVITY: f32 = 0.4;
-        const MAX_FALL_SPEED: f32 = 8.0;
+        const GRAVITY: f32 = 0.15;  // Much slower gravity for deliberate jumps
+        const MAX_FALL_SPEED: f32 = 3.5;  // Even slower terminal velocity
 
         // Get player position for ninja AI
         let _player_pos = if self.player_id < self.entities.len() {
@@ -228,11 +278,11 @@ impl HambertCartridge {
                     entity.x += entity.vel_x;
                     entity.y += entity.vel_y;
 
-                    // Apply friction when on ground
+                    // Apply friction when on ground (increased for more control)
                     if entity.on_ground {
-                        entity.vel_x *= 0.85;
+                        entity.vel_x *= 0.75;  // More friction on ground
                     } else {
-                        entity.vel_x *= 0.98;
+                        entity.vel_x *= 0.96;  // Slight air resistance
                     }
 
                     // Keep within world bounds
@@ -263,30 +313,14 @@ impl HambertCartridge {
         // Platform collision detection
         self.check_platform_collisions();
 
-        // Ground collision - follows terrain contours with smooth movement
+        // Ground collision - simple flat ground at Y=200
         for entity in &mut self.entities {
             if matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
-                // Calculate terrain height at entity's center X position
-                let entity_center_x = entity.x + entity.width / 2.0;
-                let terrain_height = ((entity_center_x * 0.02).sin() * 5.0) as f32;
-                let ground_level = 200.0 + terrain_height;
-
-                // Check if entity should be on ground
-                if entity.y + entity.height >= ground_level && entity.vel_y >= 0.0 {
-                    // Smoothly adjust to ground level to maintain consistent horizontal speed
-                    let target_y = ground_level - entity.height;
-
-                    // If we're close to the ground, snap to it
-                    if (entity.y - target_y).abs() < 2.0 {
-                        entity.y = target_y;
-                        entity.vel_y = 0.0;
-                        entity.on_ground = true;
-                    } else if entity.y > target_y {
-                        // Gradually adjust downward to prevent speed boost
-                        entity.y = target_y;
-                        entity.vel_y = 0.0;
-                        entity.on_ground = true;
-                    }
+                let ground_level = 200.0;
+                if entity.y + entity.height >= ground_level {
+                    entity.y = ground_level - entity.height;
+                    entity.vel_y = 0.0;
+                    entity.on_ground = true;
                 }
             }
         }
@@ -358,6 +392,7 @@ impl HambertCartridge {
                         }
 
                         self.pending_shuriken.push(shuriken);
+                        self.pending_sounds.push(SoundEffect::ShurikenThrow);
                     }
                 }
             }
@@ -418,5 +453,79 @@ impl HambertCartridge {
         js_sys::Reflect::set(&obj, &"entity_type".into(), &(entity.entity_type as u32).into()).unwrap();
 
         Some(obj)
+    }
+
+    // Intro/Interlude screen methods
+    fn update_intro_screen(&mut self, up: bool, down: bool, left: bool, right: bool) {
+        // Update typewriter animation
+        self.text_timer += 1.0 / 60.0; // Assuming 60fps
+
+        let chars_per_second = 20.0; // Speed of typewriter effect
+        let target_index = (self.text_timer * chars_per_second) as usize;
+        let intro_text = "Get ready for a funny adventure!";
+
+        if target_index > self.text_index && self.text_index < intro_text.len() {
+            self.text_index = target_index.min(intro_text.len());
+        }
+
+        // Any key to continue to game after text is complete
+        if (up || down || left || right) && self.text_index >= intro_text.len() {
+            self.game_state = GameState::Playing;
+            self.text_timer = 0.0;
+            self.text_index = 0;
+        }
+    }
+
+    fn update_interlude_screen(&mut self, up: bool, down: bool, left: bool, right: bool) {
+        // Update typewriter animation
+        self.text_timer += 1.0 / 60.0;
+
+        let chars_per_second = 20.0;
+        let target_index = (self.text_timer * chars_per_second) as usize;
+        let interlude_text = &format!("Level {} Complete! Ready for more?", self.current_level);
+
+        if target_index > self.text_index && self.text_index < interlude_text.len() {
+            self.text_index = target_index.min(interlude_text.len());
+        }
+
+        // Any key to continue to next level after text is complete
+        if (up || down || left || right) && self.text_index >= interlude_text.len() {
+            self.current_level += 1;
+            self.game_state = GameState::Playing;
+            self.text_timer = 0.0;
+            self.text_index = 0;
+            // Could reset world or load new level here
+        }
+    }
+
+    pub fn get_game_state(&self) -> u32 {
+        match self.game_state {
+            GameState::Intro => 0,
+            GameState::Playing => 1,
+            GameState::Interlude => 2,
+        }
+    }
+
+    pub fn get_intro_text(&self) -> String {
+        match self.game_state {
+            GameState::Intro => {
+                let full_text = "Get ready for a funny adventure!";
+                full_text.chars().take(self.text_index).collect()
+            },
+            GameState::Interlude => {
+                let full_text = format!("Level {} Complete! Ready for more?", self.current_level);
+                full_text.chars().take(self.text_index).collect()
+            },
+            _ => String::new(),
+        }
+    }
+
+    // Audio interface methods
+    pub fn get_pending_sounds(&self) -> Vec<u32> {
+        self.pending_sounds.iter().map(|&sound| sound as u32).collect()
+    }
+
+    pub fn clear_pending_sounds(&mut self) {
+        self.pending_sounds.clear();
     }
 }
