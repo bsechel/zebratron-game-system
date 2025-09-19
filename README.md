@@ -1,5 +1,8 @@
 # ZebratronGameSystem
 
+> **⚠️ Experimental Prototype Phase**
+> This project is currently in early experimental development. The architecture, APIs, and functionality are rapidly evolving and subject to significant changes. Not recommended for production use at this time.
+
 <div align="center">
   <img src="zebratron-game-system.png" alt="ZebratronGameSystem Logo" width="400">
 </div>
