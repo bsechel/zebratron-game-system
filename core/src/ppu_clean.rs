@@ -1,0 +1,884 @@
+use wasm_bindgen::prelude::*;
+use crate::memory::Memory;
+
+const SCREEN_WIDTH: usize = 320;
+const SCREEN_HEIGHT: usize = 240;
+
+// 8x8 bitmap font data for printable ASCII characters (32-126)
+const FONT_8X8: [[u8; 8]; 95] = [
+    // Space (32)
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    // ! (33)
+    [0x18, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x18, 0x00],
+    // " (34)
+    [0x36, 0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    // # (35)
+    [0x36, 0x36, 0x7F, 0x36, 0x7F, 0x36, 0x36, 0x00],
+    // $ (36)
+    [0x0C, 0x3E, 0x03, 0x1E, 0x30, 0x1F, 0x0C, 0x00],
+    // % (37)
+    [0x00, 0x63, 0x33, 0x18, 0x0C, 0x66, 0x63, 0x00],
+    // & (38)
+    [0x1C, 0x36, 0x1C, 0x6E, 0x3B, 0x33, 0x6E, 0x00],
+    // ' (39)
+    [0x06, 0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00],
+    // ( (40)
+    [0x18, 0x0C, 0x06, 0x06, 0x06, 0x0C, 0x18, 0x00],
+    // ) (41)
+    [0x06, 0x0C, 0x18, 0x18, 0x18, 0x0C, 0x06, 0x00],
+    // * (42)
+    [0x00, 0x66, 0x3C, 0xFF, 0x3C, 0x66, 0x00, 0x00],
+    // + (43)
+    [0x00, 0x0C, 0x0C, 0x3F, 0x0C, 0x0C, 0x00, 0x00],
+    // , (44)
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x06, 0x00],
+    // - (45)
+    [0x00, 0x00, 0x00, 0x3F, 0x00, 0x00, 0x00, 0x00],
+    // . (46)
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C, 0x00],
+    // / (47)
+    [0x60, 0x30, 0x18, 0x0C, 0x06, 0x03, 0x01, 0x00],
+    // 0 (48)
+    [0x3E, 0x63, 0x73, 0x7B, 0x6F, 0x67, 0x3E, 0x00],
+    // 1 (49)
+    [0x0C, 0x0E, 0x0C, 0x0C, 0x0C, 0x0C, 0x3F, 0x00],
+    // 2 (50)
+    [0x1E, 0x33, 0x30, 0x1C, 0x06, 0x33, 0x3F, 0x00],
+    // 3 (51)
+    [0x1E, 0x33, 0x30, 0x1C, 0x30, 0x33, 0x1E, 0x00],
+    // 4 (52)
+    [0x38, 0x3C, 0x36, 0x33, 0x7F, 0x30, 0x78, 0x00],
+    // 5 (53)
+    [0x3F, 0x03, 0x1F, 0x30, 0x30, 0x33, 0x1E, 0x00],
+    // 6 (54)
+    [0x1C, 0x06, 0x03, 0x1F, 0x33, 0x33, 0x1E, 0x00],
+    // 7 (55)
+    [0x3F, 0x33, 0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x00],
+    // 8 (56)
+    [0x1E, 0x33, 0x33, 0x1E, 0x33, 0x33, 0x1E, 0x00],
+    // 9 (57)
+    [0x1E, 0x33, 0x33, 0x3E, 0x30, 0x18, 0x0E, 0x00],
+    // : (58)
+    [0x00, 0x0C, 0x0C, 0x00, 0x00, 0x0C, 0x0C, 0x00],
+    // ; (59)
+    [0x00, 0x0C, 0x0C, 0x00, 0x00, 0x0C, 0x06, 0x00],
+    // < (60)
+    [0x18, 0x0C, 0x06, 0x03, 0x06, 0x0C, 0x18, 0x00],
+    // = (61)
+    [0x00, 0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00, 0x00],
+    // > (62)
+    [0x06, 0x0C, 0x18, 0x30, 0x18, 0x0C, 0x06, 0x00],
+    // ? (63)
+    [0x1E, 0x33, 0x30, 0x18, 0x0C, 0x00, 0x0C, 0x00],
+    // @ (64)
+    [0x3E, 0x63, 0x7B, 0x7B, 0x7B, 0x03, 0x1E, 0x00],
+    // A (65)
+    [0x0C, 0x1E, 0x33, 0x33, 0x3F, 0x33, 0x33, 0x00],
+    // B (66)
+    [0x3F, 0x66, 0x66, 0x3E, 0x66, 0x66, 0x3F, 0x00],
+    // C (67)
+    [0x3C, 0x66, 0x03, 0x03, 0x03, 0x66, 0x3C, 0x00],
+    // D (68)
+    [0x1F, 0x36, 0x66, 0x66, 0x66, 0x36, 0x1F, 0x00],
+    // E (69)
+    [0x7F, 0x46, 0x16, 0x1E, 0x16, 0x46, 0x7F, 0x00],
+    // F (70)
+    [0x7F, 0x46, 0x16, 0x1E, 0x16, 0x06, 0x0F, 0x00],
+    // G (71)
+    [0x3C, 0x66, 0x03, 0x03, 0x73, 0x66, 0x7C, 0x00],
+    // H (72)
+    [0x33, 0x33, 0x33, 0x3F, 0x33, 0x33, 0x33, 0x00],
+    // I (73)
+    [0x1E, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x1E, 0x00],
+    // J (74)
+    [0x78, 0x30, 0x30, 0x30, 0x33, 0x33, 0x1E, 0x00],
+    // K (75)
+    [0x67, 0x66, 0x36, 0x1E, 0x36, 0x66, 0x67, 0x00],
+    // L (76)
+    [0x0F, 0x06, 0x06, 0x06, 0x46, 0x66, 0x7F, 0x00],
+    // M (77)
+    [0x63, 0x77, 0x7F, 0x7F, 0x6B, 0x63, 0x63, 0x00],
+    // N (78)
+    [0x63, 0x67, 0x6F, 0x7B, 0x73, 0x63, 0x63, 0x00],
+    // O (79)
+    [0x1C, 0x36, 0x63, 0x63, 0x63, 0x36, 0x1C, 0x00],
+    // P (80)
+    [0x3F, 0x66, 0x66, 0x3E, 0x06, 0x06, 0x0F, 0x00],
+    // Q (81)
+    [0x1E, 0x33, 0x33, 0x33, 0x3B, 0x1E, 0x38, 0x00],
+    // R (82)
+    [0x3F, 0x66, 0x66, 0x3E, 0x36, 0x66, 0x67, 0x00],
+    // S (83)
+    [0x1E, 0x33, 0x07, 0x0E, 0x38, 0x33, 0x1E, 0x00],
+    // T (84)
+    [0x3F, 0x2D, 0x0C, 0x0C, 0x0C, 0x0C, 0x1E, 0x00],
+    // U (85)
+    [0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x3F, 0x00],
+    // V (86)
+    [0x33, 0x33, 0x33, 0x33, 0x33, 0x1E, 0x0C, 0x00],
+    // W (87)
+    [0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00],
+    // X (88)
+    [0x63, 0x63, 0x36, 0x1C, 0x1C, 0x36, 0x63, 0x00],
+    // Y (89)
+    [0x33, 0x33, 0x33, 0x1E, 0x0C, 0x0C, 0x1E, 0x00],
+    // Z (90)
+    [0x7F, 0x63, 0x31, 0x18, 0x4C, 0x66, 0x7F, 0x00],
+    // [ (91)
+    [0x1E, 0x06, 0x06, 0x06, 0x06, 0x06, 0x1E, 0x00],
+    // \ (92)
+    [0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0x40, 0x00],
+    // ] (93)
+    [0x1E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x1E, 0x00],
+    // ^ (94)
+    [0x08, 0x1C, 0x36, 0x63, 0x00, 0x00, 0x00, 0x00],
+    // _ (95)
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF],
+    // ` (96)
+    [0x0C, 0x0C, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00],
+    // a (97)
+    [0x00, 0x00, 0x1E, 0x30, 0x3E, 0x33, 0x6E, 0x00],
+    // b (98)
+    [0x07, 0x06, 0x06, 0x3E, 0x66, 0x66, 0x3B, 0x00],
+    // c (99)
+    [0x00, 0x00, 0x1E, 0x33, 0x03, 0x33, 0x1E, 0x00],
+    // d (100)
+    [0x38, 0x30, 0x30, 0x3e, 0x33, 0x33, 0x6E, 0x00],
+    // e (101)
+    [0x00, 0x00, 0x1E, 0x33, 0x3f, 0x03, 0x1E, 0x00],
+    // f (102)
+    [0x1C, 0x36, 0x06, 0x0f, 0x06, 0x06, 0x0F, 0x00],
+    // g (103)
+    [0x00, 0x00, 0x6E, 0x33, 0x33, 0x3E, 0x30, 0x1F],
+    // h (104)
+    [0x07, 0x06, 0x36, 0x6E, 0x66, 0x66, 0x67, 0x00],
+    // i (105)
+    [0x0C, 0x00, 0x0E, 0x0C, 0x0C, 0x0C, 0x1E, 0x00],
+    // j (106)
+    [0x30, 0x00, 0x30, 0x30, 0x30, 0x33, 0x33, 0x1E],
+    // k (107)
+    [0x07, 0x06, 0x66, 0x36, 0x1E, 0x36, 0x67, 0x00],
+    // l (108)
+    [0x0E, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x1E, 0x00],
+    // m (109)
+    [0x00, 0x00, 0x33, 0x7F, 0x7F, 0x6B, 0x63, 0x00],
+    // n (110)
+    [0x00, 0x00, 0x1F, 0x33, 0x33, 0x33, 0x33, 0x00],
+    // o (111)
+    [0x00, 0x00, 0x1E, 0x33, 0x33, 0x33, 0x1E, 0x00],
+    // p (112)
+    [0x00, 0x00, 0x3B, 0x66, 0x66, 0x3E, 0x06, 0x0F],
+    // q (113)
+    [0x00, 0x00, 0x6E, 0x33, 0x33, 0x3E, 0x30, 0x78],
+    // r (114)
+    [0x00, 0x00, 0x3B, 0x6E, 0x66, 0x06, 0x0F, 0x00],
+    // s (115)
+    [0x00, 0x00, 0x3E, 0x03, 0x1E, 0x30, 0x1F, 0x00],
+    // t (116)
+    [0x08, 0x0C, 0x3E, 0x0C, 0x0C, 0x2C, 0x18, 0x00],
+    // u (117)
+    [0x00, 0x00, 0x33, 0x33, 0x33, 0x33, 0x6E, 0x00],
+    // v (118)
+    [0x00, 0x00, 0x33, 0x33, 0x33, 0x1E, 0x0C, 0x00],
+    // w (119)
+    [0x00, 0x00, 0x63, 0x6B, 0x7F, 0x7F, 0x36, 0x00],
+    // x (120)
+    [0x00, 0x00, 0x63, 0x36, 0x1C, 0x36, 0x63, 0x00],
+    // y (121)
+    [0x00, 0x00, 0x33, 0x33, 0x33, 0x3E, 0x30, 0x1F],
+    // z (122)
+    [0x00, 0x00, 0x3F, 0x19, 0x0C, 0x26, 0x3F, 0x00],
+    // { (123)
+    [0x38, 0x0C, 0x0C, 0x07, 0x0C, 0x0C, 0x38, 0x00],
+    // | (124)
+    [0x18, 0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x00],
+    // } (125)
+    [0x07, 0x0C, 0x0C, 0x38, 0x0C, 0x0C, 0x07, 0x00],
+    // ~ (126)
+    [0x6E, 0x3B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+];
+
+// 128-color master palette - artist-friendly with good range
+const MASTER_PALETTE: [(u8, u8, u8); 128] = [
+    // Grayscale ramp (0-15)
+    (0, 0, 0), (17, 17, 17), (34, 34, 34), (51, 51, 51),
+    (68, 68, 68), (85, 85, 85), (102, 102, 102), (119, 119, 119),
+    (136, 136, 136), (153, 153, 153), (170, 170, 170), (187, 187, 187),
+    (204, 204, 204), (221, 221, 221), (238, 238, 238), (255, 255, 255),
+
+    // Reds (16-31)
+    (128, 0, 0), (160, 0, 0), (192, 0, 0), (224, 0, 0),
+    (255, 0, 0), (255, 32, 32), (255, 64, 64), (255, 96, 96),
+    (255, 128, 128), (255, 160, 160), (255, 192, 192), (255, 224, 224),
+    (128, 32, 0), (160, 64, 0), (192, 96, 32), (224, 128, 64),
+
+    // Oranges/Browns (32-47)
+    (255, 128, 0), (255, 160, 0), (255, 192, 0), (255, 224, 0),
+    (255, 255, 0), (224, 224, 0), (192, 192, 0), (160, 160, 0),
+    (128, 128, 0), (160, 128, 64), (192, 160, 96), (224, 192, 128),
+    (139, 69, 19), (160, 82, 45), (205, 133, 63), (222, 184, 135),
+
+    // Greens (48-63)
+    (0, 128, 0), (0, 160, 0), (0, 192, 0), (0, 224, 0),
+    (0, 255, 0), (32, 255, 32), (64, 255, 64), (96, 255, 96),
+    (128, 255, 128), (160, 255, 160), (192, 255, 192), (224, 255, 224),
+    (0, 128, 64), (0, 160, 96), (32, 192, 128), (64, 224, 160),
+
+    // Cyans (64-79)
+    (0, 255, 255), (0, 224, 224), (0, 192, 192), (0, 160, 160),
+    (0, 128, 128), (32, 160, 160), (64, 192, 192), (96, 224, 224),
+    (128, 255, 255), (160, 255, 255), (192, 255, 255), (224, 255, 255),
+    (0, 128, 96), (0, 160, 128), (32, 192, 160), (64, 224, 192),
+
+    // Blues (80-95)
+    (0, 0, 128), (0, 0, 160), (0, 0, 192), (0, 0, 224),
+    (0, 0, 255), (32, 32, 255), (64, 64, 255), (96, 96, 255),
+    (128, 128, 255), (160, 160, 255), (192, 192, 255), (224, 224, 255),
+    (0, 64, 128), (32, 96, 160), (64, 128, 192), (96, 160, 224),
+
+    // Purples/Magentas (96-111)
+    (128, 0, 128), (160, 0, 160), (192, 0, 192), (224, 0, 224),
+    (255, 0, 255), (255, 32, 255), (255, 64, 255), (255, 96, 255),
+    (255, 128, 255), (255, 160, 255), (255, 192, 255), (255, 224, 255),
+    (128, 0, 64), (160, 32, 96), (192, 64, 128), (224, 96, 160),
+
+    // Skin tones & earth tones (112-127)
+    (255, 220, 177), (255, 206, 158), (238, 180, 120), (210, 150, 95),
+    (180, 120, 80), (150, 100, 70), (120, 80, 60), (100, 70, 50),
+    (139, 115, 85), (160, 130, 98), (205, 175, 149), (222, 196, 176),
+    (245, 222, 179), (255, 228, 196), (255, 235, 205), (255, 248, 220),
+];
+
+// Sprite data structure - what cartridges provide to PPU
+#[derive(Clone)]
+pub struct SpriteData {
+    pub x: f32,
+    pub y: f32,
+    pub sprite_id: u32,
+    pub active: bool,
+}
+
+pub struct Ppu {
+    // Screen buffer - RGBA format
+    screen_buffer: Vec<u8>,
+
+    // PPU registers (authentic 8-bit hardware)
+    control: u8,
+    mask: u8,
+    status: u8,
+
+    // Scroll position (hardware registers)
+    scroll_x: f32,
+    scroll_y: f32,
+
+    // Current scanline and cycle
+    scanline: u16,
+    cycle: u16,
+
+    // Frame count
+    frame_count: u64,
+
+    // Sprite data provided by cartridge
+    sprites: Vec<SpriteData>,
+
+    // Demo mode toggle
+    color_test_mode: bool,
+}
+
+impl Ppu {
+    pub fn new() -> Ppu {
+        let screen_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
+
+        Ppu {
+            screen_buffer,
+            control: 0,
+            mask: 0,
+            status: 0,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            scanline: 0,
+            cycle: 0,
+            frame_count: 0,
+            sprites: Vec::new(),
+            color_test_mode: false,
+        }
+    }
+
+    pub fn step(&mut self, _memory: &Memory) -> bool {
+        self.cycle += 1;
+
+        // Simple scanline progression
+        if self.cycle >= 341 {
+            self.cycle = 0;
+            self.scanline += 1;
+
+            if self.scanline >= 262 {
+                self.scanline = 0;
+                self.frame_count += 1;
+                return true; // Frame complete
+            }
+        }
+
+        false
+    }
+
+    // Hardware register access for cartridges
+    pub fn set_scroll(&mut self, x: f32, y: f32) {
+        self.scroll_x = x;
+        self.scroll_y = y;
+    }
+
+    pub fn get_scroll_x(&self) -> f32 {
+        self.scroll_x
+    }
+
+    pub fn get_scroll_y(&self) -> f32 {
+        self.scroll_y
+    }
+
+    // Sprite management - cartridge provides sprite data
+    pub fn clear_sprites(&mut self) {
+        self.sprites.clear();
+    }
+
+    pub fn add_sprite(&mut self, x: f32, y: f32, sprite_id: u32, active: bool) {
+        self.sprites.push(SpriteData {
+            x,
+            y,
+            sprite_id,
+            active,
+        });
+    }
+
+    // Color test mode (debugging)
+    pub fn toggle_color_test(&mut self) {
+        self.color_test_mode = !self.color_test_mode;
+    }
+
+    pub fn get_color_test_mode(&self) -> bool {
+        self.color_test_mode
+    }
+
+    // Rendering
+    pub fn render(&mut self) {
+        if self.color_test_mode {
+            self.render_color_test();
+        } else {
+            self.render_game();
+        }
+    }
+
+    fn render_game(&mut self) {
+        // Clear screen with background color
+        let bg_color = MASTER_PALETTE[0]; // Black
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render background patterns
+        self.render_background();
+
+        // Render sprites provided by cartridge
+        let sprites = self.sprites.clone();
+        let scroll_x = self.scroll_x;
+        let scroll_y = self.scroll_y;
+
+        // Render sprites provided by cartridge
+        for sprite in &sprites {
+            if sprite.active {
+                self.render_sprite(sprite.x - scroll_x, sprite.y - scroll_y, sprite.sprite_id);
+            }
+        }
+
+        // Debug: Render coordinate display
+        self.render_debug_coordinates();
+    }
+
+    fn render_background(&mut self) {
+        // Render sky gradient
+        self.render_sky_gradient();
+
+        // Render mountain layers with parallax
+        self.render_mountains();
+
+        // Render background trees between mountains and foreground
+        self.render_background_trees();
+
+        // Render ground terrain
+        self.render_ground_terrain();
+    }
+
+    fn render_sky_gradient(&mut self) {
+        // Create a vertical gradient from light blue (top) to lighter blue/white (bottom)
+        for y in 0..SCREEN_HEIGHT {
+            // Calculate gradient position (0.0 at top, 1.0 at bottom)
+            let gradient_pos = y as f32 / SCREEN_HEIGHT as f32;
+
+            // Sky gradient: bright blue at top, lighter towards horizon
+            let palette_index = if gradient_pos < 0.3 {
+                84u8  // Bright blue
+            } else if gradient_pos < 0.6 {
+                85u8  // Slightly lighter blue
+            } else if gradient_pos < 0.8 {
+                86u8  // Even lighter blue
+            } else {
+                87u8  // Light blue near horizon
+            };
+
+            let color = MASTER_PALETTE[palette_index as usize % MASTER_PALETTE.len()];
+
+            // Fill the entire width with this color
+            for x in 0..SCREEN_WIDTH {
+                let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+                self.screen_buffer[pixel_index] = color.0;
+                self.screen_buffer[pixel_index + 1] = color.1;
+                self.screen_buffer[pixel_index + 2] = color.2;
+                self.screen_buffer[pixel_index + 3] = 255;
+            }
+        }
+    }
+
+    fn render_mountains(&mut self) {
+        // Parallax mountain silhouettes in the background
+        let mountain_parallax_factor = 0.3; // Mountains move 30% of camera speed
+        let mountain_offset = -self.scroll_x * mountain_parallax_factor;
+
+        // Render mountain layers (back to front)
+        self.render_mountain_layer(mountain_offset * 0.5, 100, 96u8);  // Far mountains (purple)
+        self.render_mountain_layer(mountain_offset * 0.7, 120, 80u8);  // Mid mountains (darker blue)
+        self.render_mountain_layer(mountain_offset, 140, 48u8);        // Near mountains (dark green)
+    }
+
+    fn render_mountain_layer(&mut self, offset: f32, base_height: usize, color_index: u8) {
+        let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+
+        // Create mountain silhouette using a simple sin wave pattern
+        for x in 0..SCREEN_WIDTH {
+            let world_x = x as f32 + self.scroll_x + offset;
+
+            // Create mountain profile using multiple sin waves for natural look
+            let mountain_height =
+                ((world_x * 0.01).sin() * 30.0) +           // Large mountains
+                ((world_x * 0.03).sin() * 15.0) +           // Medium hills
+                ((world_x * 0.05).sin() * 8.0) +            // Small details
+                ((world_x * 0.02).cos() * 20.0);            // Add some asymmetry
+
+            let mountain_top = (base_height as f32 + mountain_height) as usize;
+
+            // Fill from mountain top to bottom of screen
+            for y in mountain_top..SCREEN_HEIGHT {
+                if y < SCREEN_HEIGHT {
+                    let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+                    // Blend with existing color for transparency effect
+                    let existing_r = self.screen_buffer[pixel_index];
+                    let existing_g = self.screen_buffer[pixel_index + 1];
+                    let existing_b = self.screen_buffer[pixel_index + 2];
+
+                    // Simple alpha blending (50% mountain, 50% sky)
+                    self.screen_buffer[pixel_index] = ((color.0 as u16 + existing_r as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 1] = ((color.1 as u16 + existing_g as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 2] = ((color.2 as u16 + existing_b as u16) / 2) as u8;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
+    fn render_ground_terrain(&mut self) {
+        // Render ground level terrain that scrolls with camera
+        let ground_level = 200; // Base ground level in world coordinates
+
+        for x in 0..SCREEN_WIDTH {
+            let world_x = x as f32 + self.scroll_x;
+
+            // Create slight terrain variation
+            let terrain_height = ((world_x * 0.02).sin() * 5.0) as i32;
+            let world_ground_y = ground_level + terrain_height;
+
+            // Convert world coordinates to screen coordinates
+            let screen_ground_y = (world_ground_y as f32 - self.scroll_y) as i32;
+
+            // Render ground from terrain level to bottom of screen
+            for screen_y in screen_ground_y.max(0)..SCREEN_HEIGHT as i32 {
+                if screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
+                    let pixel_index = (screen_y as usize * SCREEN_WIDTH + x) * 4;
+
+                    // Ground color based on depth from surface
+                    let depth = screen_y - screen_ground_y;
+                    let ground_color = if depth < 5 {
+                        49u8  // Bright green grass
+                    } else if depth < 15 {
+                        33u8  // Brown dirt
+                    } else {
+                        17u8  // Dark brown rock
+                    };
+
+                    let color = MASTER_PALETTE[ground_color as usize % MASTER_PALETTE.len()];
+                    self.screen_buffer[pixel_index] = color.0;
+                    self.screen_buffer[pixel_index + 1] = color.1;
+                    self.screen_buffer[pixel_index + 2] = color.2;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
+    fn render_background_trees(&mut self) {
+        // Render stylized background trees with parallax
+        let tree_parallax = 0.4; // Trees move slower than foreground
+        let tree_offset = -self.scroll_x * tree_parallax;
+
+        // Place trees at regular intervals
+        for tree_pos in (0..1200).step_by(80) {
+            let tree_x = (tree_pos as f32 + tree_offset) % (SCREEN_WIDTH as f32 + 100.0) - 50.0;
+            let ground_y = 200.0 + ((tree_x * 0.02).sin() * 5.0); // Follow ground contour
+
+            self.render_single_tree(tree_x as i32, ground_y as i32);
+        }
+    }
+
+    fn render_single_tree(&mut self, base_x: i32, base_y: i32) {
+        // Simple tree silhouette - trunk and crown
+        let trunk_width = 4;
+        let trunk_height = 25;
+        let crown_radius = 15;
+
+        // Render trunk
+        let trunk_color = MASTER_PALETTE[32 % MASTER_PALETTE.len()]; // Brown
+        for y in (base_y - trunk_height)..base_y {
+            for x in (base_x - trunk_width / 2)..(base_x + trunk_width / 2) {
+                if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
+                    let pixel_index = ((y as usize * SCREEN_WIDTH) + x as usize) * 4;
+                    if pixel_index + 3 < self.screen_buffer.len() {
+                        self.screen_buffer[pixel_index] = trunk_color.0;
+                        self.screen_buffer[pixel_index + 1] = trunk_color.1;
+                        self.screen_buffer[pixel_index + 2] = trunk_color.2;
+                        self.screen_buffer[pixel_index + 3] = 255;
+                    }
+                }
+            }
+        }
+
+        // Render crown (circular)
+        let crown_color = MASTER_PALETTE[48 % MASTER_PALETTE.len()]; // Dark green
+        let crown_center_y = base_y - trunk_height - crown_radius / 2;
+
+        for y in (crown_center_y - crown_radius)..(crown_center_y + crown_radius) {
+            for x in (base_x - crown_radius)..(base_x + crown_radius) {
+                if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
+                    let dist_sq = (x - base_x) * (x - base_x) + (y - crown_center_y) * (y - crown_center_y);
+                    if dist_sq <= (crown_radius * crown_radius) {
+                        let pixel_index = ((y as usize * SCREEN_WIDTH) + x as usize) * 4;
+                        if pixel_index + 3 < self.screen_buffer.len() {
+                            // Add some variation to the crown shape
+                            let variation = ((x as f32 * 0.3).sin() + (y as f32 * 0.4).cos()) * 0.3;
+                            if variation > -0.2 { // Create irregular crown edge
+                                self.screen_buffer[pixel_index] = crown_color.0;
+                                self.screen_buffer[pixel_index + 1] = crown_color.1;
+                                self.screen_buffer[pixel_index + 2] = crown_color.2;
+                                self.screen_buffer[pixel_index + 3] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_sprite(&mut self, x: f32, y: f32, sprite_id: u32) {
+        // Get sprite dimensions based on sprite type
+        let (sprite_width, sprite_height) = match sprite_id {
+            0 => (24, 20),  // Hambert
+            1 => (32, 16),  // Platform
+            2 => (24, 24),  // Enemy
+            3 => (20, 32),  // Ninja
+            4 => (12, 12),  // Shuriken
+            _ => (32, 32),  // Default
+        };
+
+        for py in 0..sprite_height {
+            for px in 0..sprite_width {
+                let screen_x = x as i32 + px as i32;
+                let screen_y = y as i32 + py as i32;
+
+                if screen_x >= 0 && screen_x < SCREEN_WIDTH as i32 &&
+                   screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
+
+                    let color_index = self.get_sprite_pixel(sprite_id, px, py);
+                    if color_index > 0 {
+                        let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+                        let buffer_index = (screen_y as usize * SCREEN_WIDTH + screen_x as usize) * 4;
+
+                        if buffer_index + 3 < self.screen_buffer.len() {
+                            self.screen_buffer[buffer_index] = color.0;
+                            self.screen_buffer[buffer_index + 1] = color.1;
+                            self.screen_buffer[buffer_index + 2] = color.2;
+                            self.screen_buffer[buffer_index + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_sprite_pixel(&self, sprite_id: u32, x: u32, y: u32) -> u8 {
+        match sprite_id {
+            0 => self.get_hambert_pixel(x, y),      // Player/Hambert
+            1 => self.get_platform_pixel(x, y),     // Platform
+            2 => self.get_enemy_pixel(x, y),        // Basic enemy
+            3 => self.get_ninja_pixel(x, y),        // Ninja
+            4 => self.get_shuriken_pixel(x, y),     // Shuriken
+            _ => 0, // Transparent for unknown sprites
+        }
+    }
+
+    fn get_hambert_pixel(&self, x: u32, y: u32) -> u8 {
+        // Hambert character sprite (24x20 pixels)
+        // Simple pixelated character design
+
+        if x >= 24 || y >= 20 {
+            return 0; // Transparent outside bounds
+        }
+
+        // Hambert sprite data - defining a cute pixelated character
+        match y {
+            // Head area (rows 0-7)
+            0..=1 => {
+                if x >= 8 && x < 16 {
+                    112 // Skin tone for head
+                } else {
+                    0 // Transparent
+                }
+            },
+            2..=6 => {
+                match x {
+                    6..=8 | 15..=17 => 112, // Skin tone (head sides)
+                    9..=10 | 13..=14 => 1,  // Eyes (black)
+                    11..=12 => 112,         // Nose area (skin)
+                    _ => 0,                 // Transparent
+                }
+            },
+            7 => {
+                if x >= 8 && x < 16 {
+                    if x >= 10 && x <= 13 {
+                        16 // Red mouth
+                    } else {
+                        112 // Skin
+                    }
+                } else {
+                    0 // Transparent
+                }
+            },
+            // Body area (rows 8-15)
+            8..=11 => {
+                match x {
+                    7..=9 | 14..=16 => 17,  // Arms (darker red)
+                    10..=13 => 20,          // Body (bright red shirt)
+                    _ => 0,                 // Transparent
+                }
+            },
+            12..=15 => {
+                if x >= 10 && x < 14 {
+                    83 // Blue pants
+                } else if x >= 8 && x < 10 || x >= 14 && x < 16 {
+                    17 // Arms continuing
+                } else {
+                    0 // Transparent
+                }
+            },
+            // Legs area (rows 16-19)
+            16..=19 => {
+                match x {
+                    9..=10 | 13..=14 => 83, // Blue pants/legs
+                    8 | 11..=12 | 15 => 1,  // Black shoes/outline
+                    _ => 0,                 // Transparent
+                }
+            },
+            _ => 0, // Transparent
+        }
+    }
+
+    fn get_platform_pixel(&self, x: u32, y: u32) -> u8 {
+        // Detailed platform texture like original
+        if y < 2 {
+            // Top grass layer with variation
+            if (x + y) % 3 == 0 {
+                52 // Bright green grass
+            } else {
+                49 // Medium green grass
+            }
+        } else if y < 6 {
+            // Dirt layer with some texture
+            if (x + y) % 4 == 0 {
+                34 // Lighter brown dirt
+            } else {
+                33 // Medium brown dirt
+            }
+        } else if y < 10 {
+            // Deeper dirt
+            if (x + y) % 5 == 0 {
+                32 // Dark brown
+            } else {
+                17 // Very dark brown
+            }
+        } else {
+            // Rock layer at bottom
+            if (x + y) % 6 == 0 {
+                8 // Dark gray rock
+            } else {
+                1 // Very dark gray/black rock
+            }
+        }
+    }
+
+    fn get_enemy_pixel(&self, x: u32, y: u32) -> u8 {
+        // Simple 24x24 enemy sprite (red)
+        if x < 2 || x >= 22 || y < 2 || y >= 22 {
+            0 // Black border
+        } else {
+            16 // Red from palette
+        }
+    }
+
+    fn get_ninja_pixel(&self, x: u32, y: u32) -> u8 {
+        // 20x32 ninja sprite
+        if y < 8 {
+            // Head area
+            if (x >= 6 && x < 14) && (y >= 1 && y < 7) {
+                if (x == 7 || x == 12) && (y == 3 || y == 4) {
+                    return 15; // Eyes (white)
+                }
+                return 1; // Head (black/dark)
+            }
+            return 0;
+        } else if y >= 8 && y < 20 {
+            // Body/torso
+            if x >= 5 && x < 15 {
+                if y >= 10 && y < 16 {
+                    return 8; // Dark gray ninja outfit
+                }
+                if (x >= 3 && x < 6) || (x >= 14 && x < 17) {
+                    return 8; // Arms
+                }
+                return 1; // Black outfit
+            }
+            if ((x >= 1 && x < 4) || (x >= 16 && x < 19)) && (y >= 12 && y < 16) {
+                return 8; // Extended arms
+            }
+            return 0;
+        } else {
+            // Legs
+            if (x >= 6 && x < 8) || (x >= 12 && x < 14) {
+                return 8; // Legs
+            }
+            if y >= 29 && ((x >= 4 && x < 9) || (x >= 11 && x < 16)) {
+                return 0; // Black feet/shoes
+            }
+            return 0;
+        }
+    }
+
+    fn get_shuriken_pixel(&self, x: u32, y: u32) -> u8 {
+        // 12x12 spinning shuriken - simplified for now
+        let center_x = 6.0;
+        let center_y = 6.0;
+        let dx = x as f32 - center_x;
+        let dy = y as f32 - center_y;
+        let distance = (dx * dx + dy * dy).sqrt();
+
+        if distance <= 4.0 && distance >= 1.0 {
+            if distance <= 2.8 {
+                7  // Light gray center
+            } else {
+                0  // Black edges
+            }
+        } else {
+            0 // Transparent
+        }
+    }
+
+    fn render_debug_coordinates(&mut self) {
+        // Show world coordinates at each corner
+        let text_color = MASTER_PALETTE[15]; // White
+
+        // Top-left: (scroll_x, scroll_y)
+        let tl_text = format!("({:.0},{:.0})", self.scroll_x, self.scroll_y);
+        self.render_text(&tl_text, 2, 2, text_color);
+
+        // Top-right: (scroll_x + 320, scroll_y)
+        let tr_text = format!("({:.0},{:.0})", self.scroll_x + 320.0, self.scroll_y);
+        self.render_text(&tr_text, 250, 2, text_color);
+
+        // Bottom-left: (scroll_x, scroll_y + 240)
+        let bl_text = format!("({:.0},{:.0})", self.scroll_x, self.scroll_y + 240.0);
+        self.render_text(&bl_text, 2, 230, text_color);
+
+        // Bottom-right: (scroll_x + 320, scroll_y + 240)
+        let br_text = format!("({:.0},{:.0})", self.scroll_x + 320.0, self.scroll_y + 240.0);
+        self.render_text(&br_text, 250, 230, text_color);
+    }
+
+    fn render_text(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8)) {
+        // Simple text rendering using the font
+        for (i, ch) in text.chars().enumerate() {
+            if ch.is_ascii() {
+                let char_index = (ch as u8).saturating_sub(32) as usize;
+                if char_index < FONT_8X8.len() {
+                    self.render_char(char_index, x + i * 8, y, color);
+                }
+            }
+        }
+    }
+
+    fn render_char(&mut self, char_index: usize, x: usize, y: usize, color: (u8, u8, u8)) {
+        let font_data = FONT_8X8[char_index];
+
+        for row in 0..8 {
+            let byte = font_data[row];
+            for col in 0..8 {
+                if (byte >> col) & 1 != 0 {
+                    let pixel_x = x + col;
+                    let pixel_y = y + row;
+
+                    if pixel_x < SCREEN_WIDTH && pixel_y < SCREEN_HEIGHT {
+                        let pixel_index = (pixel_y * SCREEN_WIDTH + pixel_x) * 4;
+                        if pixel_index + 3 < self.screen_buffer.len() {
+                            self.screen_buffer[pixel_index] = color.0;
+                            self.screen_buffer[pixel_index + 1] = color.1;
+                            self.screen_buffer[pixel_index + 2] = color.2;
+                            self.screen_buffer[pixel_index + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_color_test(&mut self) {
+        // Render color test pattern
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_WIDTH {
+                let color_index = ((x / 16) + (y / 16) * 20) % MASTER_PALETTE.len();
+                let color = MASTER_PALETTE[color_index];
+
+                let buffer_index = (y * SCREEN_WIDTH + x) * 4;
+                self.screen_buffer[buffer_index] = color.0;
+                self.screen_buffer[buffer_index + 1] = color.1;
+                self.screen_buffer[buffer_index + 2] = color.2;
+                self.screen_buffer[buffer_index + 3] = 255;
+            }
+        }
+    }
+
+    pub fn get_screen_buffer(&self) -> Vec<u8> {
+        self.screen_buffer.clone()
+    }
+
+    pub fn get_frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+}

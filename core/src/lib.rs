@@ -1,9 +1,12 @@
 mod utils;
 mod cpu;
 mod ppu;
+mod ppu_clean;
 mod apu;
 mod memory;
 mod system;
+mod system_cartridge;
+mod cartridge;
 
 use wasm_bindgen::prelude::*;
 
@@ -23,5 +26,7 @@ pub fn greet() {
     alert("Hello, ZebratronGameSystem!");
 }
 
-// Export the main system struct
+// Export the main system struct and cartridge
 pub use system::ZebratronSystem;
+pub use system_cartridge::ZebratronCartridgeSystem;
+pub use cartridge::HambertCartridge;
