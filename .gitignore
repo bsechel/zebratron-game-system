@@ -50,3 +50,6 @@ yarn-error.log*
 
 # Sprite reference materials and assets
 SPRITE_REFERENCES/
+
+# Laravel integration documentation
+docs/LARAVEL_INTEGRATION_OPTION*.md

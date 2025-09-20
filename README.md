@@ -15,6 +15,9 @@ A modern 8-bit game system inspired by the NES and Sega Master System, designed 
 
 **A project by Niebo Microsystems**
 
+> **📝 Character Attribution**
+> The "Zebratron" name and the Zebratron and Hambert characters featured in this system are created and copyrighted by the artist Christopher Graybill and [Zebratron.com](https://zebratron.com), and are inspired by the original Zebratron zines and video animation series.
+
 ## 🎮 System Specifications
 
 ### Hardware Specs

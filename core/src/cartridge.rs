@@ -558,6 +558,11 @@ pub struct ZSynthCartridge {
     pending_note_off: Vec<u32>,
     // Piano key visualization
     piano_keys: Vec<PianoKey>,
+    // Arpeggio state
+    arpeggio_timers: HashMap<char, f32>,  // Track how long each key has been held
+    arpeggio_patterns: HashMap<char, Vec<i32>>,  // Minor arpeggio patterns for each key
+    current_arpeggio_notes: HashMap<char, u32>,  // Currently playing arpeggio note for each key
+    arpeggio_step: HashMap<char, usize>,  // Current step in arpeggio pattern for each key
 }
 
 #[wasm_bindgen]
@@ -611,6 +616,16 @@ impl ZSynthCartridge {
             });
         }
         
+        // Create minor arpeggio patterns for each key
+        // Minor triad pattern: root, minor third, fifth, octave, fifth, minor third (and repeat)
+        let mut arpeggio_patterns = HashMap::new();
+        for (i, &key) in keys.iter().enumerate() {
+            let root_note = 36 + i as u32;
+            // Minor arpeggio: root, +3 semitones (minor third), +7 semitones (fifth), +12 (octave)
+            let pattern = vec![0, 3, 7, 12, 7, 3]; // Relative to root note
+            arpeggio_patterns.insert(key, pattern);
+        }
+
         ZSynthCartridge {
             key_to_note,
             active_notes: HashMap::new(),
@@ -618,6 +633,10 @@ impl ZSynthCartridge {
             pending_note_on: Vec::new(),
             pending_note_off: Vec::new(),
             piano_keys,
+            arpeggio_timers: HashMap::new(),
+            arpeggio_patterns,
+            current_arpeggio_notes: HashMap::new(),
+            arpeggio_step: HashMap::new(),
         }
     }
 
@@ -626,7 +645,14 @@ impl ZSynthCartridge {
         if let Some(&note) = self.key_to_note.get(&key_lower) {
             if !self.active_notes.contains_key(&key_lower) {
                 self.active_notes.insert(key_lower, note);
+                
+                // Initialize arpeggio state for this key
+                self.arpeggio_timers.insert(key_lower, 0.0);
+                self.arpeggio_step.insert(key_lower, 0);
+                
+                // Play the first note of the arpeggio (root note)
                 self.pending_note_on.push(note);
+                self.current_arpeggio_notes.insert(key_lower, note);
                 
                 // Update visual piano key
                 for piano_key in &mut self.piano_keys {
@@ -641,8 +667,15 @@ impl ZSynthCartridge {
 
     pub fn handle_key_up(&mut self, key: char) {
         let key_lower = key.to_ascii_lowercase();
-        if let Some(note) = self.active_notes.remove(&key_lower) {
-            self.pending_note_off.push(note);
+        if let Some(_note) = self.active_notes.remove(&key_lower) {
+            // Stop the current arpeggio note
+            if let Some(current_arp_note) = self.current_arpeggio_notes.remove(&key_lower) {
+                self.pending_note_off.push(current_arp_note);
+            }
+            
+            // Clean up arpeggio state
+            self.arpeggio_timers.remove(&key_lower);
+            self.arpeggio_step.remove(&key_lower);
             
             // Update visual piano key
             for piano_key in &mut self.piano_keys {
@@ -656,7 +689,44 @@ impl ZSynthCartridge {
 
     pub fn update_synth(&mut self) {
         self.frame_count += 1;
-        // Additional synth processing can go here
+        
+        // Update arpeggio timers and advance notes for held keys
+        let dt = 1.0 / 60.0; // Assuming 60 FPS
+        let arpeggio_speed = 0.3; // Time between arpeggio notes in seconds
+        
+        let mut keys_to_update: Vec<char> = self.arpeggio_timers.keys().cloned().collect();
+        
+        for key in keys_to_update {
+            if let Some(timer) = self.arpeggio_timers.get_mut(&key) {
+                *timer += dt;
+                
+                // Check if it's time to advance to the next arpeggio note
+                if *timer >= arpeggio_speed {
+                    *timer = 0.0; // Reset timer
+                    
+                    // Stop current arpeggio note
+                    if let Some(current_note) = self.current_arpeggio_notes.get(&key) {
+                        self.pending_note_off.push(*current_note);
+                    }
+                    
+                    // Advance to next step in arpeggio pattern
+                    if let Some(step) = self.arpeggio_step.get_mut(&key) {
+                        if let Some(pattern) = self.arpeggio_patterns.get(&key) {
+                            *step = (*step + 1) % pattern.len();
+                            
+                            // Calculate and play the next arpeggio note
+                            if let Some(&root_note) = self.key_to_note.get(&key) {
+                                let pattern_offset = pattern[*step];
+                                let arpeggio_note = (root_note as i32 + pattern_offset) as u32;
+                                
+                                self.pending_note_on.push(arpeggio_note);
+                                self.current_arpeggio_notes.insert(key, arpeggio_note);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Get pending note on events for audio processing
