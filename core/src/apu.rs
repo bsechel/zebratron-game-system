@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use std::f32::consts::PI;
+use std::collections::HashMap;
 
 #[wasm_bindgen]
 pub struct Apu {
@@ -30,6 +31,18 @@ pub struct Apu {
     melody_timer: f32,
     melody_tempo: f32,  // Steps per second
     melody_notes: [u8; 16], // MIDI notes for the melody
+
+    // Sound effect system
+    sfx_active: bool,
+    sfx_timer: f32,
+    sfx_duration: f32,
+    sfx_start_note: u8,
+    sfx_end_note: u8,
+    sfx_waveform: u8,
+
+    // Polyphonic synthesizer for Z-Synth
+    synth_oscillators: HashMap<u32, DigitalOscillator>, // MIDI note -> oscillator
+    synth_enabled: bool,
 }
 
 struct PulseChannel {
@@ -183,6 +196,18 @@ impl Apu {
             // D E♭ F G A♭ B♭ C D (D natural minor scale)
             melody_notes: [62, 65, 67, 62, 0, 65, 67, 70,   // D F A D rest F A B♭
                           72, 70, 67, 65, 62, 0, 62, 0],   // C B♭ A F D rest D rest
+
+            // Initialize sound effects
+            sfx_active: false,
+            sfx_timer: 0.0,
+            sfx_duration: 0.0,
+            sfx_start_note: 60,
+            sfx_end_note: 60,
+            sfx_waveform: 0,
+
+            // Initialize polyphonic synthesizer
+            synth_oscillators: HashMap::new(),
+            synth_enabled: false,
         }
     }
 
@@ -215,13 +240,47 @@ impl Apu {
             }
         }
 
+        // Update sound effect if active
+        if self.sfx_active {
+            // Advance sound effect timer
+            self.sfx_timer += 1.0 / (29780.0 * 60.0); // Same rate as melody timer
+
+            // Calculate progress (0.0 to 1.0)
+            let progress = (self.sfx_timer / self.sfx_duration).min(1.0);
+
+            if progress >= 1.0 {
+                // Sound effect finished
+                self.sfx_active = false;
+                if self.sound_test_mode && !self.melody_enabled {
+                    // Return to manual control
+                    self.test_osc.frequency = Self::midi_to_frequency(self.current_note);
+                } else {
+                    // Disable oscillator if not in sound test mode
+                    self.test_osc.enabled = false;
+                }
+            } else {
+                // Interpolate between start and end note
+                let current_note_float = self.sfx_start_note as f32 +
+                    (self.sfx_end_note as f32 - self.sfx_start_note as f32) * progress;
+                let current_freq = Self::midi_to_frequency(current_note_float as u8);
+
+                // Apply to test oscillator
+                self.test_osc.frequency = current_freq;
+                self.test_osc.waveform = self.sfx_waveform;
+                self.test_osc.enabled = true;
+            }
+        }
+
         // TODO: Implement proper frame sequencer timing for other channels
     }
 
     pub fn generate_sample(&mut self) -> f32 {
         let mut sample = 0.0;
 
-        if self.sound_test_mode {
+        // Always check for sound effects first
+        if self.sfx_active && self.test_osc.enabled {
+            sample += Self::generate_digital_oscillator_sample(&mut self.test_osc, self.sample_rate);
+        } else if self.sound_test_mode {
             // In sound test mode, only use the test oscillator
             if self.test_osc.enabled {
                 sample += Self::generate_digital_oscillator_sample(&mut self.test_osc, self.sample_rate);
@@ -246,6 +305,15 @@ impl Apu {
             // Generate noise channel
             if self.noise.enabled {
                 sample += Self::generate_noise_sample(&mut self.noise);
+            }
+        }
+
+        // Generate polyphonic synthesizer (always active when notes are playing)
+        if self.synth_enabled && !self.synth_oscillators.is_empty() {
+            for osc in self.synth_oscillators.values_mut() {
+                if osc.enabled {
+                    sample += Self::generate_digital_oscillator_sample(osc, self.sample_rate);
+                }
             }
         }
 
@@ -643,7 +711,79 @@ impl Apu {
         self.melody_tempo
     }
 
+    // Sound effect methods
+    pub fn play_sound_effect(&mut self, start_note: u8, end_note: u8, waveform: u8, duration: f32) {
+        self.sfx_active = true;
+        self.sfx_timer = 0.0;
+        self.sfx_duration = duration;
+        self.sfx_start_note = start_note;
+        self.sfx_end_note = end_note;
+        self.sfx_waveform = waveform;
+
+        // Immediately set the starting frequency and waveform
+        self.test_osc.frequency = Self::midi_to_frequency(start_note);
+        self.test_osc.waveform = waveform;
+        self.test_osc.enabled = true;
+    }
+
     pub fn set_master_volume(&mut self, volume: f32) {
         self.master_volume = volume.clamp(0.0, 1.0);
+    }
+
+    // Polyphonic synthesizer methods for Z-Synth
+    pub fn synth_note_on(&mut self, note: u32) {
+        if !self.synth_oscillators.contains_key(&note) {
+            let mut osc = DigitalOscillator {
+                enabled: true,
+                frequency: Self::midi_to_frequency(note as u8),
+                waveform: 0, // Start with pulse wave
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.3, // Lower volume for polyphony
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false,
+                    filter_type: 0,
+                    cutoff: 0.8,
+                    resonance: 0.2,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.3,
+                    feedback: 0.4,
+                    mix: 0.2,
+                    buffer: vec![0.0; 44100], // 1 second buffer at 44.1kHz
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+                    feedback_filter: 0.0,
+                },
+            };
+            self.synth_oscillators.insert(note, osc);
+        }
+        self.synth_enabled = true;
+    }
+
+    pub fn synth_note_off(&mut self, note: u32) {
+        self.synth_oscillators.remove(&note);
+        if self.synth_oscillators.is_empty() {
+            self.synth_enabled = false;
+        }
+    }
+
+    pub fn set_synth_enabled(&mut self, enabled: bool) {
+        self.synth_enabled = enabled;
+        if !enabled {
+            self.synth_oscillators.clear();
+        }
+    }
+
+    pub fn get_synth_active_note_count(&self) -> usize {
+        self.synth_oscillators.len()
     }
 }

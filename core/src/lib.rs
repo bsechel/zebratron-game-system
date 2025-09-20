@@ -30,3 +30,4 @@ pub fn greet() {
 pub use system::ZebratronSystem;
 pub use system_cartridge::ZebratronCartridgeSystem;
 pub use cartridge::HambertCartridge;
+pub use cartridge::ZSynthCartridge;

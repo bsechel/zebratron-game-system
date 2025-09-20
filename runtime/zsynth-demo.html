@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z-Synth Demo - ZebratronGameSystem</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #222;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        h1 {
+            color: #00ff88;
+            text-align: center;
+            text-shadow: 0 0 10px #00ff88;
+            margin-bottom: 20px;
+        }
+        
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #00ff88;
+            image-rendering: pixelated;
+            background: #000;
+        }
+        
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        button {
+            background: #006600;
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        
+        button:hover {
+            background: #008800;
+        }
+        
+        button:active {
+            background: #004400;
+        }
+        
+        .status {
+            background: #111;
+            border: 1px solid #00ff88;
+            padding: 10px;
+            border-radius: 4px;
+            min-width: 300px;
+            text-align: center;
+        }
+        
+        .keyboard {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            margin-top: 20px;
+        }
+        
+        .keyboard-row {
+            display: flex;
+            gap: 2px;
+        }
+        
+        .key {
+            width: 40px;
+            height: 40px;
+            background: #333;
+            border: 2px solid #666;
+            color: #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: all 0.1s;
+        }
+        
+        .key.active {
+            background: #00ff88;
+            color: #000;
+            border-color: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+        }
+        
+        .instructions {
+            margin-top: 20px;
+            padding: 15px;
+            background: #111;
+            border: 1px solid #00ff88;
+            border-radius: 4px;
+            max-width: 600px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎹 Z-Synth - ZebratronGameSystem Synthesizer</h1>
+    
+    <div class="game-container">
+        <canvas id="gameCanvas" width="320" height="240"></canvas>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="loadZSynthBtn">🎹 Load Z-Synth</button>
+                <button id="loadHambertBtn">🐹 Load Hambert Game</button>
+            </div>
+            
+            <div class="control-group">
+                <button id="startBtn">▶️ Start</button>
+                <button id="stopBtn">⏸️ Stop</button>
+                <button id="resetBtn">🔄 Reset</button>
+            </div>
+        </div>
+        
+        <div class="status" id="status">Click "Load Z-Synth" to begin</div>
+        
+        <div class="keyboard">
+            <div class="keyboard-row">
+                <div class="key" data-key="z">Z</div>
+                <div class="key" data-key="s">S</div>
+                <div class="key" data-key="x">X</div>
+                <div class="key" data-key="d">D</div>
+                <div class="key" data-key="c">C</div>
+                <div class="key" data-key="v">V</div>
+                <div class="key" data-key="g">G</div>
+                <div class="key" data-key="b">B</div>
+                <div class="key" data-key="h">H</div>
+                <div class="key" data-key="n">N</div>
+                <div class="key" data-key="j">J</div>
+                <div class="key" data-key="m">M</div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>🎵 Instructions</h3>
+            <p>Press the <strong>ZSXDCVGBHNJM</strong> keys to play notes (C2 through B2).</p>
+            <p>Each key corresponds to a chromatic note starting from C2 (MIDI 36).</p>
+            <p>Multiple notes can be played simultaneously for polyphonic synthesis!</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { ZebratronCartridgeSystem } from './src/index';
+
+        class ZSynthDemo {
+            constructor() {
+                this.system = null;
+                this.isRunning = false;
+                this.currentCartridge = null;
+                this.activeKeys = new Set();
+                
+                this.setupUI();
+                this.setupKeyboardListeners();
+                this.initializeSystem();
+            }
+
+            async initializeSystem() {
+                try {
+                    console.log('🚀 Creating ZebratronCartridgeSystem...');
+                    this.system = new ZebratronCartridgeSystem();
+                    
+                    console.log('🚀 Initializing system...');
+                    const canvas = document.getElementById('gameCanvas');
+                    await this.system.initialize(canvas);
+                    console.log('✅ System initialized successfully!');
+                    this.updateStatus('System ready - Load a cartridge');
+                } catch (error) {
+                    console.error('❌ Failed to initialize system:', error);
+                    this.updateStatus('Failed to initialize system');
+                }
+            }
+
+            setupUI() {
+                const loadZSynthBtn = document.getElementById('loadZSynthBtn');
+                const loadHambertBtn = document.getElementById('loadHambertBtn');
+                const startBtn = document.getElementById('startBtn');
+                const stopBtn = document.getElementById('stopBtn');
+                const resetBtn = document.getElementById('resetBtn');
+
+                loadZSynthBtn.addEventListener('click', () => this.loadZSynth());
+                loadHambertBtn.addEventListener('click', () => this.loadHambert());
+                startBtn.addEventListener('click', () => this.start());
+                stopBtn.addEventListener('click', () => this.stop());
+                resetBtn.addEventListener('click', () => this.reset());
+            }
+
+            setupKeyboardListeners() {
+                const synthKeys = 'zsxdcvgbhnjm';
+                
+                document.addEventListener('keydown', (event) => {
+                    const key = event.key.toLowerCase();
+                    
+                    if (synthKeys.includes(key) && this.currentCartridge === 'zsynth' && this.system) {
+                        if (!this.activeKeys.has(key)) {
+                            this.activeKeys.add(key);
+                            this.system.handleZSynthKeyDown(key);
+                            this.updateKeyVisual(key, true);
+                            console.log(`🎵 Note ON: ${key.toUpperCase()}`);
+                        }
+                        event.preventDefault();
+                    }
+                });
+
+                document.addEventListener('keyup', (event) => {
+                    const key = event.key.toLowerCase();
+                    
+                    if (synthKeys.includes(key) && this.currentCartridge === 'zsynth' && this.system) {
+                        if (this.activeKeys.has(key)) {
+                            this.activeKeys.delete(key);
+                            this.system.handleZSynthKeyUp(key);
+                            this.updateKeyVisual(key, false);
+                            console.log(`🎵 Note OFF: ${key.toUpperCase()}`);
+                        }
+                        event.preventDefault();
+                    }
+                });
+            }
+
+            updateKeyVisual(key, active) {
+                const keyElement = document.querySelector(`[data-key="${key}"]`);
+                if (keyElement) {
+                    if (active) {
+                        keyElement.classList.add('active');
+                    } else {
+                        keyElement.classList.remove('active');
+                    }
+                }
+            }
+
+            loadZSynth() {
+                if (!this.system) {
+                    this.updateStatus('System not initialized yet');
+                    return;
+                }
+                try {
+                    console.log('🎹 Loading Z-Synth cartridge...');
+                    const success = this.system.loadZSynthCartridge();
+                    if (success) {
+                        this.currentCartridge = 'zsynth';
+                        console.log('✅ Z-Synth cartridge loaded!');
+                        this.updateStatus('Z-Synth loaded - Press keys ZSXDCVGBHNJM to play notes');
+                    } else {
+                        console.error('❌ Failed to load Z-Synth cartridge');
+                        this.updateStatus('Failed to load Z-Synth');
+                    }
+                } catch (error) {
+                    console.error('❌ Error loading Z-Synth:', error);
+                    this.updateStatus('Error loading Z-Synth');
+                }
+            }
+
+            loadHambert() {
+                if (!this.system) {
+                    this.updateStatus('System not initialized yet');
+                    return;
+                }
+                try {
+                    console.log('🐹 Loading Hambert cartridge...');
+                    const success = this.system.loadHambertCartridge();
+                    if (success) {
+                        this.currentCartridge = 'hambert';
+                        console.log('✅ Hambert cartridge loaded!');
+                        this.updateStatus('Hambert game loaded - Use arrow keys to play');
+                    } else {
+                        console.error('❌ Failed to load Hambert cartridge');
+                        this.updateStatus('Failed to load Hambert');
+                    }
+                } catch (error) {
+                    console.error('❌ Error loading Hambert:', error);
+                    this.updateStatus('Error loading Hambert');
+                }
+            }
+
+            async start() {
+                if (this.isRunning || !this.system) return;
+
+                try {
+                    console.log('▶️ Starting system...');
+                    await this.system.start();
+                    this.isRunning = true;
+                    this.updateStatus('Running - ' + (this.currentCartridge === 'zsynth' ? 'Play some music!' : 'Game active'));
+                    this.gameLoop();
+                } catch (error) {
+                    console.error('❌ Failed to start system:', error);
+                    this.updateStatus('Failed to start system');
+                }
+            }
+
+            stop() {
+                this.isRunning = false;
+                if (this.system) {
+                    this.system.stop();
+                }
+                this.updateStatus('Stopped');
+                
+                // Clear all active keys
+                this.activeKeys.clear();
+                document.querySelectorAll('.key.active').forEach(key => {
+                    key.classList.remove('active');
+                });
+            }
+
+            reset() {
+                if (this.system) {
+                    this.system.reset();
+                    this.updateStatus('Reset');
+                }
+            }
+
+            gameLoop() {
+                if (!this.isRunning || !this.system) return;
+
+                try {
+                    const frameReady = this.system.stepFrame();
+                    if (frameReady) {
+                        this.system.render();
+                        
+                        // Update status with Z-Synth info if applicable
+                        if (this.currentCartridge === 'zsynth') {
+                            const synthInfo = this.system.getZSynthInfo();
+                            this.updateStatus(synthInfo);
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ Game loop error:', error);
+                }
+
+                requestAnimationFrame(() => this.gameLoop());
+            }
+
+            updateStatus(message) {
+                const statusElement = document.getElementById('status');
+                if (statusElement) {
+                    statusElement.textContent = message;
+                }
+            }
+        }
+
+        // Initialize the demo when the page loads
+        const demo = new ZSynthDemo();
+        console.log('🎹 Z-Synth Demo initialized!');
+    </script>
+</body>
+</html>

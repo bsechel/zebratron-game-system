@@ -1,4 +1,5 @@
 use wasm_bindgen::prelude::*;
+use std::collections::HashMap;
 
 // Sound effect IDs for the Hambert game
 #[derive(Clone, Copy)]
@@ -49,7 +50,7 @@ pub struct Entity {
 impl Entity {
     pub fn new(entity_type: EntityType, x: f32, y: f32, sprite_id: u32) -> Self {
         let (width, height) = match entity_type {
-            EntityType::Player => (24.0, 20.0),  // Hambert size
+            EntityType::Player => (32.0, 28.0),  // Hambert size (larger)
             EntityType::Enemy => (24.0, 24.0),
             EntityType::Ninja => (20.0, 32.0),   // Taller, more figure-like
             EntityType::Platform => (64.0, 16.0),
@@ -527,5 +528,196 @@ impl HambertCartridge {
 
     pub fn clear_pending_sounds(&mut self) {
         self.pending_sounds.clear();
+    }
+}
+
+// Piano key data for visualization
+#[derive(Clone)]
+pub struct PianoKey {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub is_black: bool,
+    pub is_pressed: bool,
+    pub keyboard_key: char,  // The ZSXDCVGBHNJM key that triggers this note
+    pub note: u32,          // MIDI note number
+}
+
+// Z-Synth cartridge - A synthesizer application
+#[wasm_bindgen]
+pub struct ZSynthCartridge {
+    // Key mappings for ZSXDCVGBHNJM -> C2+ notes
+    key_to_note: HashMap<char, u32>,
+    // Currently pressed keys and their corresponding notes
+    active_notes: HashMap<char, u32>,
+    // Frame counter for animations
+    frame_count: u64,
+    // Audio-related state
+    pending_note_on: Vec<u32>,
+    pending_note_off: Vec<u32>,
+    // Piano key visualization
+    piano_keys: Vec<PianoKey>,
+}
+
+#[wasm_bindgen]
+impl ZSynthCartridge {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> ZSynthCartridge {
+        let mut key_to_note = HashMap::new();
+        let mut piano_keys = Vec::new();
+        
+        // Map ZSXDCVGBHNJM to chromatic notes starting from C2 (MIDI 36)
+        let keys = ['z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm'];
+        
+        // MIDI note 36 = C2, create a chromatic octave: C, C#, D, D#, E, F, F#, G, G#, A, A#, B
+        let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        let black_keys = [false, true, false, true, false, false, true, false, true, false, true, false];
+        
+        // Piano layout: white keys are wider, black keys are narrower and offset
+        let mut white_key_index = 0;
+        let white_key_width = 25.0;  // Smaller to fit screen
+        let black_key_width = 15.0;  // Smaller to fit screen
+        let white_key_height = 80.0; // Shorter to fit screen
+        let black_key_height = 50.0; // Shorter to fit screen
+        let keyboard_start_x = 10.0;    // Center horizontally (320px screen - 300px keyboard = 20px / 2 = 10px)
+        let keyboard_y = 100.0;      // Move up a bit for better centering
+        
+        for (i, &key) in keys.iter().enumerate() {
+            let note = 36 + i as u32;
+            let is_black = black_keys[i];
+            key_to_note.insert(key, note);
+            
+            let (x, y, width, height) = if is_black {
+                // Black keys are positioned between white keys
+                let prev_white_x = keyboard_start_x + (white_key_index as f32 - 0.5) * white_key_width;
+                (prev_white_x - black_key_width / 2.0, keyboard_y, black_key_width, black_key_height)
+            } else {
+                // White keys are positioned sequentially
+                let x = keyboard_start_x + white_key_index as f32 * white_key_width;
+                white_key_index += 1;
+                (x, keyboard_y, white_key_width, white_key_height)
+            };
+            
+            piano_keys.push(PianoKey {
+                x,
+                y,
+                width,
+                height,
+                is_black,
+                is_pressed: false,
+                keyboard_key: key,
+                note,
+            });
+        }
+        
+        ZSynthCartridge {
+            key_to_note,
+            active_notes: HashMap::new(),
+            frame_count: 0,
+            pending_note_on: Vec::new(),
+            pending_note_off: Vec::new(),
+            piano_keys,
+        }
+    }
+
+    pub fn handle_key_down(&mut self, key: char) {
+        let key_lower = key.to_ascii_lowercase();
+        if let Some(&note) = self.key_to_note.get(&key_lower) {
+            if !self.active_notes.contains_key(&key_lower) {
+                self.active_notes.insert(key_lower, note);
+                self.pending_note_on.push(note);
+                
+                // Update visual piano key
+                for piano_key in &mut self.piano_keys {
+                    if piano_key.keyboard_key == key_lower {
+                        piano_key.is_pressed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_key_up(&mut self, key: char) {
+        let key_lower = key.to_ascii_lowercase();
+        if let Some(note) = self.active_notes.remove(&key_lower) {
+            self.pending_note_off.push(note);
+            
+            // Update visual piano key
+            for piano_key in &mut self.piano_keys {
+                if piano_key.keyboard_key == key_lower {
+                    piano_key.is_pressed = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn update_synth(&mut self) {
+        self.frame_count += 1;
+        // Additional synth processing can go here
+    }
+
+    // Get pending note on events for audio processing
+    pub fn get_pending_note_on(&self) -> Vec<u32> {
+        self.pending_note_on.clone()
+    }
+
+    // Get pending note off events for audio processing
+    pub fn get_pending_note_off(&self) -> Vec<u32> {
+        self.pending_note_off.clone()
+    }
+
+    // Clear pending note events after processing
+    pub fn clear_pending_notes(&mut self) {
+        self.pending_note_on.clear();
+        self.pending_note_off.clear();
+    }
+
+    // Get currently active notes for display
+    pub fn get_active_note_count(&self) -> usize {
+        self.active_notes.len()
+    }
+
+    pub fn get_active_notes_info(&self) -> String {
+        let mut info = String::new();
+        for (key, note) in &self.active_notes {
+            if !info.is_empty() {
+                info.push_str(", ");
+            }
+            info.push_str(&format!("{}:{}", key.to_uppercase(), note));
+        }
+        info
+    }
+
+    // Get frame count for animations
+    pub fn get_frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    // Piano visualization methods
+    pub fn get_piano_key_count(&self) -> usize {
+        self.piano_keys.len()
+    }
+
+    pub fn get_piano_key_data(&self, index: usize) -> Option<js_sys::Object> {
+        if index >= self.piano_keys.len() {
+            return None;
+        }
+
+        let key = &self.piano_keys[index];
+        let obj = js_sys::Object::new();
+
+        js_sys::Reflect::set(&obj, &"x".into(), &key.x.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"y".into(), &key.y.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"width".into(), &key.width.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"height".into(), &key.height.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"is_black".into(), &key.is_black.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"is_pressed".into(), &key.is_pressed.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"keyboard_key".into(), &key.keyboard_key.to_string().into()).unwrap();
+        js_sys::Reflect::set(&obj, &"note".into(), &key.note.into()).unwrap();
+
+        Some(obj)
     }
 }

@@ -253,8 +253,10 @@ const MASTER_PALETTE: [(u8, u8, u8); 128] = [
 pub enum EntityType {
     Player,
     Enemy,
+    Ninja,
     Platform,
     Projectile,
+    Shuriken,
     Collectible,
 }
 
@@ -280,8 +282,10 @@ impl Entity {
         let (width, height) = match entity_type {
             EntityType::Player => (24.0, 20.0),  // Hambert size
             EntityType::Enemy => (24.0, 24.0),
+            EntityType::Ninja => (20.0, 32.0),   // Taller, more figure-like
             EntityType::Platform => (64.0, 16.0),
             EntityType::Projectile => (8.0, 8.0),
+            EntityType::Shuriken => (12.0, 12.0), // Spinning projectile
             EntityType::Collectible => (16.0, 16.0),
         };
 
@@ -299,6 +303,7 @@ impl Entity {
             health: match entity_type {
                 EntityType::Player => 3,
                 EntityType::Enemy => 1,
+                EntityType::Ninja => 2,
                 _ => 1,
             },
             animation_frame: 0,
@@ -344,6 +349,9 @@ pub struct Ppu {
 
     // Demo mode toggle
     color_test_mode: bool,
+
+    // Pending shuriken to add after physics update
+    pending_shuriken: Vec<Entity>,
 }
 
 #[wasm_bindgen]
@@ -369,6 +377,7 @@ impl Ppu {
             world_width: 2400.0,  // Large scrolling world like Hambert Boy
             world_height: 480.0,
             color_test_mode: false,
+            pending_shuriken: Vec::new(),
         };
 
         // Create a default player entity
@@ -406,6 +415,12 @@ impl Ppu {
                 // Update physics once per frame
                 self.update_physics();
 
+                // Spawn ninjas at regular intervals
+                self.update_ninja_spawning();
+
+                // Add any pending shuriken that were created during physics update
+                self.entities.extend(self.pending_shuriken.drain(..));
+
                 return true; // Frame complete
             }
         }
@@ -416,6 +431,13 @@ impl Ppu {
     fn update_physics(&mut self) {
         const GRAVITY: f32 = 0.4;  // Pixels per frame squared
         const MAX_FALL_SPEED: f32 = 8.0;  // Terminal velocity
+
+        // Get player position before the loop to avoid borrowing issues
+        let player_pos = if self.player_id < self.entities.len() {
+            Some((self.entities[self.player_id].x, self.entities[self.player_id].y))
+        } else {
+            None
+        };
 
         for entity in &mut self.entities {
             if !entity.active {
@@ -457,6 +479,95 @@ impl Ppu {
                         // Camera will be updated after physics loop
                     }
                 }
+                EntityType::Ninja => {
+                    // Apply gravity to ninjas
+                    if !entity.on_ground {
+                        entity.vel_y += GRAVITY;
+                        if entity.vel_y > MAX_FALL_SPEED {
+                            entity.vel_y = MAX_FALL_SPEED;
+                        }
+                    }
+
+                    // Apply velocity
+                    entity.x += entity.vel_x;
+                    entity.y += entity.vel_y;
+
+                    // Apply friction when on ground
+                    if entity.on_ground {
+                        entity.vel_x *= 0.85; // Friction
+                    }
+
+                    // Simple AI: Move toward player slowly
+                    if let Some((player_x, _player_y)) = player_pos {
+                        let distance_to_player = player_x - entity.x;
+                        let move_speed = 0.3; // Slow movement
+
+                        // Move toward player horizontally
+                        if distance_to_player.abs() > 50.0 { // Only move if far from player
+                            if distance_to_player > 0.0 {
+                                entity.vel_x = move_speed;
+                            } else {
+                                entity.vel_x = -move_speed;
+                            }
+                        } else {
+                            entity.vel_x *= 0.5; // Slow down when near player
+                        }
+                    }
+
+                    // Ninja throwing logic - throw shuriken periodically
+                    entity.animation_timer += 1.0;
+                    const THROW_INTERVAL: f32 = 180.0; // Throw every 3 seconds at 60fps
+
+                    if entity.animation_timer % THROW_INTERVAL == 0.0 {
+                        // Calculate direction to player
+                        if let Some((player_x, player_y)) = player_pos {
+                            let dx = player_x - entity.x;
+                            let dy = player_y - entity.y;
+                            let distance = (dx * dx + dy * dy).sqrt();
+
+                            // Only throw if player is within reasonable range
+                            if distance < 300.0 && distance > 30.0 {
+                                // Normalize direction vector
+                                let speed = 3.0;
+                                let vel_x = (dx / distance) * speed;
+                                let vel_y = (dy / distance) * speed;
+
+                                // Create shuriken at ninja position
+                                let shuriken_x = entity.x + entity.width / 2.0 - 6.0; // Center horizontally
+                                let shuriken_y = entity.y + 10.0; // Slightly below ninja's head
+
+                                let mut shuriken = Entity::new(EntityType::Shuriken, shuriken_x, shuriken_y, 0);
+                                shuriken.vel_x = vel_x;
+                                shuriken.vel_y = vel_y;
+
+                                // Store shuriken for addition after physics loop
+                                self.pending_shuriken.push(shuriken);
+                            }
+                        }
+                    }
+
+                    // Keep within world bounds
+                    entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
+                }
+                EntityType::Shuriken => {
+                    // Shuriken fly in straight lines with no gravity
+                    entity.x += entity.vel_x;
+                    entity.y += entity.vel_y;
+
+                    // Update animation timer for spinning effect
+                    entity.animation_timer += 1.0;
+
+                    // Remove shuriken if they go off-screen or hit ground
+                    if entity.x < -50.0 || entity.x > self.world_width + 50.0 ||
+                       entity.y > self.world_height {
+                        entity.active = false;
+                    }
+
+                    // Check if shuriken hits ground (approximate ground level is 200)
+                    if entity.y + entity.height >= 200.0 {
+                        entity.active = false; // Shuriken disappears when hitting ground
+                    }
+                }
                 _ => {
                     // Other entity types can have different physics later
                 }
@@ -467,13 +578,66 @@ impl Ppu {
         self.check_platform_collisions(self.player_id);
         self.check_ground_collision(self.player_id);
 
+        // Check ground collision for all ninjas
+        for i in 0..self.entities.len() {
+            if self.entities[i].entity_type == EntityType::Ninja && self.entities[i].active {
+                self.check_ground_collision(i);
+            }
+        }
+
         // Update camera to follow player after physics
         if self.player_id < self.entities.len() {
             self.update_camera_follow_player();
         }
     }
 
-    
+    fn update_ninja_spawning(&mut self) {
+        // Spawn ninjas every 300 frames (approximately 5 seconds at 60fps)
+        const NINJA_SPAWN_INTERVAL: u64 = 300;
+
+        if self.frame_count % NINJA_SPAWN_INTERVAL == 0 {
+            // Get player position for relative ninja spawning
+            if self.player_id < self.entities.len() {
+                let player = &self.entities[self.player_id];
+                let player_x = player.x;
+
+                // Spawn ninja either to the left or right of the player, but off-screen
+                let spawn_distance = 400.0; // Distance from player
+                let spawn_side = if self.frame_count % 600 < 300 { -1.0 } else { 1.0 }; // Alternate sides
+                let ninja_x = player_x + (spawn_distance * spawn_side);
+
+                // Spawn ninja at ground level (find ground height at this position)
+                let ground_y = self.get_ground_height_at_x(ninja_x);
+                let ninja_y = ground_y - 32.0; // Ninja height is 32 pixels
+
+                // Make sure ninja is within world bounds
+                if ninja_x >= 0.0 && ninja_x < (self.world_width - 20.0) {
+                    let ninja_entity = Entity::new(EntityType::Ninja, ninja_x, ninja_y, 0);
+                    self.entities.push(ninja_entity);
+
+                    // Optional: limit max number of ninjas to prevent too many
+                    const MAX_NINJAS: usize = 5;
+                    let ninja_count = self.entities.iter().filter(|e| e.entity_type == EntityType::Ninja && e.active).count();
+
+                    // If too many ninjas, remove the oldest inactive ones
+                    if ninja_count > MAX_NINJAS {
+                        if let Some(oldest_ninja_idx) = self.entities.iter()
+                            .position(|e| e.entity_type == EntityType::Ninja && !e.active) {
+                            self.entities.remove(oldest_ninja_idx);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_ground_height_at_x(&self, world_x: f32) -> f32 {
+        // Use the same terrain calculation as the ground collision system
+        let terrain_height = ((world_x * 0.02).sin() * 5.0) as f32;
+        200.0 + terrain_height
+    }
+
+
 
     pub fn render_frame(&mut self, _memory: &Memory) {
         // Clear screen with background color
@@ -702,15 +866,15 @@ impl Ppu {
 
     fn render_entities(&mut self) {
         // Collect entity data to avoid borrowing issues
-        let entities_data: Vec<(EntityType, f32, f32, f32, f32, bool)> = self.entities.iter()
-            .map(|e| (e.entity_type, e.x, e.y, e.width, e.height, e.active))
+        let entities_data: Vec<(EntityType, f32, f32, f32, f32, bool, f32)> = self.entities.iter()
+            .map(|e| (e.entity_type, e.x, e.y, e.width, e.height, e.active, e.animation_timer))
             .collect();
 
         let camera_x = self.camera_x;
         let camera_y = self.camera_y;
 
         // Render all active entities
-        for (entity_type, x, y, width, height, active) in entities_data {
+        for (entity_type, x, y, width, height, active, animation_timer) in entities_data {
             if !active {
                 continue;
             }
@@ -738,6 +902,18 @@ impl Ppu {
                 EntityType::Enemy => {
                     if screen_x >= 0 && screen_y >= 0 {
                         self.render_enemy_sprite(screen_x as usize, screen_y as usize);
+                    }
+                },
+                EntityType::Ninja => {
+                    if screen_x >= 0 && screen_y >= 0 {
+                        self.render_ninja_sprite(screen_x as usize, screen_y as usize);
+                    }
+                },
+                EntityType::Shuriken => {
+                    if screen_x >= 0 && screen_y >= 0 {
+                        // Use animation_timer for rotation
+                        let rotation = animation_timer * 0.2; // Spinning animation
+                        self.render_shuriken_sprite(screen_x as usize, screen_y as usize, rotation);
                     }
                 },
                 _ => {
@@ -868,6 +1044,125 @@ impl Ppu {
         }
     }
 
+    fn render_ninja_sprite(&mut self, x: usize, y: usize) {
+        // 20x32 ninja sprite - more figure-like proportions
+        for sprite_y in 0..32 {
+            for sprite_x in 0..20 {
+                let screen_x = x + sprite_x;
+                let screen_y = y + sprite_y;
+
+                if screen_x >= SCREEN_WIDTH || screen_y >= SCREEN_HEIGHT {
+                    continue;
+                }
+
+                let palette_index = self.get_ninja_pixel(sprite_x, sprite_y);
+
+                if palette_index > 0 {
+                    let pixel_index = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                    let (r, g, b) = self.get_palette_color(palette_index);
+                    self.screen_buffer[pixel_index] = r;
+                    self.screen_buffer[pixel_index + 1] = g;
+                    self.screen_buffer[pixel_index + 2] = b;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
+    fn get_ninja_pixel(&self, x: usize, y: usize) -> u8 {
+        // Create a figure-like ninja sprite with proper proportions
+        // 0 = transparent, other values = palette colors
+
+        // Head (rows 0-7)
+        if y < 8 {
+            if (x >= 6 && x < 14) && (y >= 1 && y < 7) {
+                if (x == 7 || x == 12) && (y == 3 || y == 4) {
+                    return 15; // Eyes (white)
+                }
+                return 1; // Head (black/dark)
+            }
+            return 0;
+        }
+
+        // Body/torso (rows 8-19)
+        if y >= 8 && y < 20 {
+            if x >= 5 && x < 15 {
+                // Chest area
+                if y >= 10 && y < 16 {
+                    return 8; // Dark gray ninja outfit
+                }
+                // Shoulders/arms
+                if (x >= 3 && x < 6) || (x >= 14 && x < 17) {
+                    return 8; // Arms
+                }
+                return 1; // Black outfit
+            }
+            // Extended arms for throwing pose
+            if ((x >= 1 && x < 4) || (x >= 16 && x < 19)) && (y >= 12 && y < 16) {
+                return 8; // Extended arms
+            }
+            return 0;
+        }
+
+        // Legs (rows 20-31)
+        if y >= 20 {
+            if (x >= 6 && x < 8) || (x >= 12 && x < 14) {
+                return 8; // Legs
+            }
+            // Feet
+            if y >= 29 && ((x >= 4 && x < 9) || (x >= 11 && x < 16)) {
+                return 0; // Black feet/shoes
+            }
+            return 0;
+        }
+
+        0 // Transparent
+    }
+
+    fn render_shuriken_sprite(&mut self, x: usize, y: usize, rotation: f32) {
+        // 12x12 spinning shuriken
+        let center_x = 6.0;
+        let center_y = 6.0;
+
+        for sprite_y in 0..12 {
+            for sprite_x in 0..12 {
+                let screen_x = x + sprite_x;
+                let screen_y = y + sprite_y;
+
+                if screen_x >= SCREEN_WIDTH || screen_y >= SCREEN_HEIGHT {
+                    continue;
+                }
+
+                let dx = sprite_x as f32 - center_x;
+                let dy = sprite_y as f32 - center_y;
+                let distance = (dx * dx + dy * dy).sqrt();
+
+                // Shuriken shape: 4-pointed star that rotates
+                let angle = dy.atan2(dx) + rotation;
+                let star_radius = 4.0 + (angle * 4.0).sin().abs() * 2.0;
+
+                let palette_index = if distance <= star_radius && distance >= 1.0 {
+                    if distance <= star_radius * 0.7 {
+                        7  // Light gray center
+                    } else {
+                        0  // Black edges
+                    }
+                } else {
+                    0 // Transparent
+                };
+
+                if palette_index > 0 {
+                    let pixel_index = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                    let (r, g, b) = self.get_palette_color(palette_index);
+                    self.screen_buffer[pixel_index] = r;
+                    self.screen_buffer[pixel_index + 1] = g;
+                    self.screen_buffer[pixel_index + 2] = b;
+                    self.screen_buffer[pixel_index + 3] = 255;
+                }
+            }
+        }
+    }
+
     fn render_simple_sprite(&mut self, x: i32, y: i32, width: i32, height: i32, color_index: u8) {
         let color = self.get_palette_color(color_index);
 
@@ -939,7 +1234,8 @@ impl Ppu {
 
         // Create mountain silhouette using a simple sin wave pattern
         for x in 0..SCREEN_WIDTH {
-            let world_x = x as f32 + offset;
+            // Correct parallax: use screen position + camera offset for world coordinate
+            let world_x = x as f32 + self.camera_x + offset;
 
             // Create mountain profile using multiple sin waves for natural look
             let mountain_height =
@@ -1259,9 +1555,11 @@ impl Ppu {
         let entity_type_enum = match entity_type {
             0 => EntityType::Player,
             1 => EntityType::Enemy,
-            2 => EntityType::Platform,
-            3 => EntityType::Projectile,
-            4 => EntityType::Collectible,
+            2 => EntityType::Ninja,
+            3 => EntityType::Platform,
+            4 => EntityType::Projectile,
+            5 => EntityType::Shuriken,
+            6 => EntityType::Collectible,
             _ => EntityType::Collectible,
         };
         let entity = Entity::new(entity_type_enum, x, y, sprite_id);

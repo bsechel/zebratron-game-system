@@ -287,6 +287,8 @@ pub struct Ppu {
     // Intro/interlude screen mode
     intro_mode: bool,
     intro_text: String,
+    // Z-Synth piano mode
+    zsynth_mode: bool,
 }
 
 impl Ppu {
@@ -307,6 +309,7 @@ impl Ppu {
             color_test_mode: false,
             intro_mode: false,
             intro_text: String::new(),
+            zsynth_mode: false,
         }
     }
 
@@ -374,12 +377,18 @@ impl Ppu {
         self.intro_text = text;
     }
 
+    pub fn set_zsynth_mode(&mut self, zsynth_mode: bool) {
+        self.zsynth_mode = zsynth_mode;
+    }
+
     // Rendering
     pub fn render(&mut self) {
         if self.color_test_mode {
             self.render_color_test();
         } else if self.intro_mode {
             self.render_intro_screen();
+        } else if self.zsynth_mode {
+            self.render_zsynth_screen();
         } else {
             self.render_game();
         }
@@ -608,11 +617,15 @@ impl Ppu {
     fn render_sprite(&mut self, x: f32, y: f32, sprite_id: u32) {
         // Get sprite dimensions based on sprite type
         let (sprite_width, sprite_height) = match sprite_id {
-            0 => (24, 20),  // Hambert
+            0 => (32, 28),  // Hambert (larger)
             1 => (32, 16),  // Platform
             2 => (24, 24),  // Enemy
             3 => (20, 32),  // Ninja
             4 => (12, 12),  // Shuriken
+            10 => (25, 80), // White piano key (unpressed)
+            11 => (25, 80), // White piano key (pressed)
+            12 => (15, 50), // Black piano key (unpressed)
+            13 => (15, 50), // Black piano key (pressed)
             _ => (32, 32),  // Default
         };
 
@@ -648,17 +661,25 @@ impl Ppu {
             2 => self.get_enemy_pixel(x, y),        // Basic enemy
             3 => self.get_ninja_pixel(x, y),        // Ninja
             4 => self.get_shuriken_pixel(x, y),     // Shuriken
+            10 => self.get_white_piano_key_pixel(x, y, false), // White key unpressed
+            11 => self.get_white_piano_key_pixel(x, y, true),  // White key pressed
+            12 => self.get_black_piano_key_pixel(x, y, false), // Black key unpressed
+            13 => self.get_black_piano_key_pixel(x, y, true),  // Black key pressed
             _ => 0, // Transparent for unknown sprites
         }
     }
 
     fn get_hambert_pixel(&self, x: u32, y: u32) -> u8 {
-        // Original Hambert Boy sprite data (24x20 pixels) from hambertBoy.js
-        if x >= 24 || y >= 20 {
+        // Scale from 32x28 back to original 24x20 sprite data
+        if x >= 32 || y >= 28 {
             return 0; // Transparent outside bounds
         }
+        
+        // Scale coordinates to original sprite size
+        let orig_x = (x * 24) / 32;  // Scale from 32 to 24
+        let orig_y = (y * 20) / 28;  // Scale from 28 to 20
 
-        // Original pixel data array from hambertBoy.js
+        // Original pixel data array from hambertBoy.js (24x20, scaled to 32x28)
         let pixel_data = [
             [0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
             [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
@@ -682,8 +703,8 @@ impl Ppu {
             [0,0,0,0,5,5,5,5,5,5,0,0,5,5,5,5,5,5,0,0,0,0,0,0],
         ];
 
-        // Original Hambert color palette mapping
-        let pixel = pixel_data[y as usize][x as usize];
+        // Use scaled coordinates to access original pixel data
+        let pixel = pixel_data[orig_y as usize][orig_x as usize];
         match pixel {
             0 => 0,   // transparent
             1 => 10,  // mid-light gray fur
@@ -880,22 +901,22 @@ impl Ppu {
         }
 
         // Render large Hambert sprite in center of screen
-        let sprite_scale = 3; // Make it 3x larger (72x60 pixels)
-        let sprite_x = (SCREEN_WIDTH as i32 - 24 * sprite_scale) / 2;
+        let sprite_scale = 3; // Make it 3x larger (96x84 pixels)
+        let sprite_x = (SCREEN_WIDTH as i32 - 32 * sprite_scale) / 2;
         let sprite_y = 50; // Position it in upper portion of screen
 
         self.render_large_hambert_sprite(sprite_x, sprite_y, sprite_scale);
 
         // Render intro text below the sprite
-        let text_y = sprite_y + 60 * sprite_scale + 20; // Below the large sprite
+        let text_y = sprite_y + 28 * sprite_scale + 20; // Below the large sprite (28 is new height)
         let text_color = MASTER_PALETTE[15]; // White
         self.render_intro_text(text_y, text_color);
     }
 
     fn render_large_hambert_sprite(&mut self, base_x: i32, base_y: i32, scale: i32) {
-        // Render scaled up Hambert sprite using the original sprite data
-        for py in 0..20 { // Original sprite height
-            for px in 0..24 { // Original sprite width
+        // Render scaled up Hambert sprite using the new sprite data
+        for py in 0..28 { // New sprite height
+            for px in 0..32 { // New sprite width
                 let color_index = self.get_hambert_pixel(px, py);
                 if color_index > 0 { // Only render non-transparent pixels
                     let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
@@ -949,12 +970,105 @@ impl Ppu {
         }
     }
 
+    fn render_zsynth_screen(&mut self) {
+        // Clear screen with dark purple background for Z-Synth
+        let bg_color = MASTER_PALETTE[95]; // Dark purple from palette
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render test text to verify rendering pipeline
+        let title_color = MASTER_PALETTE[15]; // White
+        self.render_text("Z-SYNTH PIANO", 110, 20, title_color);
+        
+        let info_color = MASTER_PALETTE[31]; // Light blue
+        self.render_text("TEST RENDERING MODE", 90, 40, info_color);
+        self.render_text("KEYS: Z S X D C V G B H N J M", 50, 60, info_color);
+        self.render_text("NOTES: C2 through B2", 80, 80, info_color);
+
+        // Render sprites provided by cartridge (piano keys)
+        let sprites = self.sprites.clone();
+        for sprite in &sprites {
+            if sprite.active {
+                self.render_sprite(sprite.x, sprite.y, sprite.sprite_id);
+            }
+        }
+
+        // Debug info
+        let debug_color = MASTER_PALETTE[47]; // Yellow
+        self.render_text(&format!("Sprites: {}", self.sprites.len()), 10, 200, debug_color);
+        self.render_text(&format!("Frame: {}", self.frame_count), 10, 220, debug_color);
+    }
+
     pub fn get_screen_buffer(&self) -> Vec<u8> {
         self.screen_buffer.clone()
     }
 
     pub fn get_frame_count(&self) -> u64 {
         self.frame_count
+    }
+
+    // Piano key rendering methods
+    fn get_white_piano_key_pixel(&self, x: u32, y: u32, is_pressed: bool) -> u8 {
+        if x >= 25 || y >= 80 {
+            return 0; // Transparent outside bounds
+        }
+
+        // White piano key design with borders and shading
+        let border_thickness = 1;
+        let shadow_width = 2;
+        
+        // Define key regions
+        let is_border = x < border_thickness || x >= 25 - border_thickness || 
+                       y < border_thickness || y >= 80 - border_thickness;
+        let is_right_shadow = x >= 25 - shadow_width;
+        let is_bottom_shadow = y >= 80 - shadow_width;
+        
+        if is_pressed {
+            // Pressed key - use red to make it obvious
+            if is_border {
+                16 // Red
+            } else {
+                20 // Bright red
+            }
+        } else {
+            // Unpressed key - use white/gray
+            if is_border {
+                1 // Black border
+            } else {
+                15 // White main area
+            }
+        }
+    }
+
+    fn get_black_piano_key_pixel(&self, x: u32, y: u32, is_pressed: bool) -> u8 {
+        if x >= 15 || y >= 50 {
+            return 0; // Transparent outside bounds
+        }
+
+        // Black piano key design
+        let border_thickness = 1;
+        let highlight_width = 1;
+        
+        let is_border = x < border_thickness || x >= 15 - border_thickness || 
+                       y < border_thickness || y >= 50 - border_thickness;
+        let is_left_highlight = x < highlight_width;
+        let is_top_highlight = y < highlight_width;
+        
+        if is_pressed {
+            // Pressed black key - use bright color to make it obvious  
+            24 // Bright yellow when pressed
+        } else {
+            // Unpressed black key - black
+            if is_border {
+                3 // Dark gray border
+            } else {
+                1 // Black main area
+            }
+        }
     }
 
 }

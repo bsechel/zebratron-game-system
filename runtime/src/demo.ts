@@ -1,7 +1,7 @@
-import { ZebratronSystem, InputManager, Button } from './index.js';
+import { ZebratronCartridgeSystem, InputManager, Button } from './index';
 
 class Demo {
-  private system: ZebratronSystem;
+  private system: ZebratronCartridgeSystem;
   // private renderer: Renderer;
   private input: InputManager;
   private isRunning = false;
@@ -12,7 +12,7 @@ class Demo {
   private soundTestMode = false;
 
   constructor() {
-    this.system = new ZebratronSystem();
+    this.system = new ZebratronCartridgeSystem();
 
     // const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
     // this.renderer = new Renderer(canvas, 2);
@@ -20,6 +20,19 @@ class Demo {
 
     this.setupUI();
     this.setupSoundTestKeys();
+
+    // Initialize the system (including audio)
+    this.initializeSystem();
+  }
+
+  private async initializeSystem(): Promise<void> {
+    try {
+      console.log('🚀 Initializing ZebratronCartridgeSystem...');
+      await this.system.initialize();
+      console.log('✅ System initialized successfully!');
+    } catch (error) {
+      console.error('❌ Failed to initialize system:', error);
+    }
   }
 
   private setupSoundTestKeys(): void {
@@ -201,11 +214,7 @@ class Demo {
     console.log('🎵 === AUDIO TEST STARTED ===');
 
     try {
-      if (!this.system.isAudioAvailable()) {
-        console.log('❌ Audio not available, initializing...');
-        // Try to initialize audio again
-        await this.system.initialize();
-      }
+      console.log('🔊 Audio available:', this.system.isAudioAvailable());
 
       console.log('🔊 Audio available:', this.system.isAudioAvailable());
       console.log('🎛️ Audio info:', this.system.getAudioInfo());
@@ -258,21 +267,10 @@ class Demo {
   private async start(): Promise<void> {
     if (this.isRunning) return;
 
-    // Create a simple test ROM (just fills memory with test pattern)
-    const testRom = new Uint8Array(1024);
-    for (let i = 0; i < testRom.length; i++) {
-      testRom[i] = i % 256;
-    }
-
-    this.system.loadCartridge(testRom);
-
     try {
-      console.log('🎮 Starting ZebratronGameSystem...');
+      console.log('🎮 Starting game loop...');
       console.log('🔊 Audio available:', this.system.isAudioAvailable());
-
-      await this.system.start();
-
-      console.log('✅ System started successfully!');
+      console.log('🏃 System running:', this.system.isRunning());
       console.log('🎵 Audio system status:', this.system.isAudioAvailable());
       console.log('🎛️ Audio info:', this.system.getAudioInfo());
 
@@ -358,9 +356,20 @@ class Demo {
     this.system.handleInput(up, down, left, right);
 
     // Step the system for one frame
-    if (this.system.stepFrame()) {
+    const frameReady = this.system.stepFrame();
+    if (frameReady) {
       this.system.render();
       this.frameCount++;
+
+      // Debug logging every 60 frames (once per second)
+      if (this.frameCount % 60 === 0) {
+        console.log(`🎮 Frame ${this.frameCount}, System running: ${this.system.isRunning()}`);
+      }
+    } else {
+      // Debug why frames aren't ready
+      if (this.frameCount < 5) {
+        console.log(`⚠️ Frame not ready, system running: ${this.system.isRunning()}`);
+      }
     }
 
     // Update debug info

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Arcade Machine - ZebratronGameSystem</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border: 1px solid #00ff88;
+            border-radius: 5px;
+            max-width: 300px;
+        }
+        
+        h1 {
+            color: #00ff88;
+            margin-top: 0;
+            text-shadow: 0 0 10px #00ff88;
+        }
+        
+        button {
+            background: #006600;
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #008800;
+        }
+        
+        .controls {
+            margin-top: 10px;
+        }
+        
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border: 1px solid #00ff88;
+            border-radius: 5px;
+            max-width: 250px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="ui">
+            <h1>🕹️ 3D Arcade</h1>
+            <div class="controls">
+                <button id="loadHambertBtn">🐹 Load Hambert</button>
+                <button id="loadZSynthBtn">🎹 Load Z-Synth</button>
+                <br>
+                <button id="startBtn">▶️ Start</button>
+                <button id="stopBtn">⏸️ Stop</button>
+                <button id="resetBtn">🔄 Reset</button>
+            </div>
+            <div class="status" id="status">Click a cartridge to load</div>
+        </div>
+        
+        <div id="instructions">
+            <strong>🎮 Controls:</strong><br>
+            • Mouse: Rotate view<br>
+            • Scroll: Zoom in/out<br>
+            • Arrow keys: Game input<br>
+            • ZSXDCVGBHNJM: Z-Synth keys
+        </div>
+    </div>
+
+    <script type="module" src="./arcade3d.js"></script>
+</body>
+</html>

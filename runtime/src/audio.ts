@@ -34,15 +34,15 @@ export class AudioManager {
       this.gainNode.connect(this.audioContext.destination);
 
       // Create script processor for real-time audio generation
-      // Using 4096 buffer size for good balance of latency vs performance
-      this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 0, 1);
+      // Using 1024 buffer size for lower latency (~23ms at 44.1kHz)
+      this.scriptProcessor = this.audioContext.createScriptProcessor(1024, 0, 1);
       this.scriptProcessor.connect(this.gainNode);
 
       this.isInitialized = true;
       console.log('🎵 Audio system initialized successfully');
       console.log(`Sample rate: ${this.audioContext.sampleRate} Hz`);
-      console.log(`Buffer size: 4096 samples`);
-      console.log(`Estimated latency: ~${Math.round(4096 / this.audioContext.sampleRate * 1000)}ms`);
+      console.log(`Buffer size: 1024 samples`);
+      console.log(`Estimated latency: ~${Math.round(1024 / this.audioContext.sampleRate * 1000)}ms`);
     } catch (error) {
       console.error('Failed to initialize audio:', error);
       throw error;

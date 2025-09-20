@@ -1,10 +1,10 @@
-export { ZebratronSystem } from './system.js';
-export { Renderer } from './renderer.js';
-export { InputManager, Button } from './input.js';
-export { AudioManager } from './audio.js';
+export { ZebratronSystem, ZebratronCartridgeSystem } from './system';
+export { Renderer } from './renderer';
+export { InputManager, Button } from './input';
+export { AudioManager } from './audio';
 
 // Main entry point for the ZebratronGameSystem runtime
-export * from './system.js';
-export * from './renderer.js';
-export * from './input.js';
-export * from './audio.js';
+export * from './system';
+export * from './renderer';
+export * from './input';
+export * from './audio';
