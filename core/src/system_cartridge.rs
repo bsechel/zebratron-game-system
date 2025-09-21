@@ -322,8 +322,8 @@ impl ZebratronCartridgeSystem {
     }
 
     fn play_jump_sound(&mut self) {
-        // Rising pitch sweep from C4 to C6 over 0.3 seconds
-        self.apu.play_sound_effect(60, 84, 1, 0.3); // C4 to C6, sawtooth, 300ms
+        // Longer, smoother rising pitch sweep from C4 to G5 over 0.6 seconds
+        self.apu.play_sound_effect(60, 79, 1, 0.6); // C4 to G5, sawtooth, 600ms
     }
 
     fn play_land_sound(&mut self) {

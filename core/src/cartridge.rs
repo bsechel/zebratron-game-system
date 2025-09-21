@@ -246,28 +246,29 @@ impl HambertCartridge {
 
         let player = &mut self.entities[self.player_id];
 
-        // Horizontal movement (slower acceleration for deliberate control)
+        // Horizontal movement (faster acceleration for responsive walking, slower in air)
+        let acceleration = if player.on_ground { 0.35 } else { 0.175 };  // Half speed in air
         if left {
-            player.vel_x -= 0.2;
+            player.vel_x -= acceleration;
         }
         if right {
-            player.vel_x += 0.2;
+            player.vel_x += acceleration;
         }
 
-        // Jumping (higher jump, more satisfying)
+        // Jumping (lower, more controlled jump)
         if up && player.on_ground {
-            player.vel_y = -6.5;
+            player.vel_y = -4.0;  // Reduced from -5.0 for lower jump height
             player.on_ground = false;
             self.pending_sounds.push(SoundEffect::Jump);
         }
 
-        // Clamp horizontal velocity (slower max speed)
-        player.vel_x = player.vel_x.max(-2.8).min(2.8);
+        // Clamp horizontal velocity (faster max walking speed)
+        player.vel_x = player.vel_x.max(-4.0).min(4.0);  // Increased from 2.8 for faster walking
     }
 
     fn update_physics(&mut self) {
-        const GRAVITY: f32 = 0.15;  // Much slower gravity for deliberate jumps
-        const MAX_FALL_SPEED: f32 = 3.5;  // Even slower terminal velocity
+        const GRAVITY: f32 = 0.05;  // Very slow gravity for floaty jumps
+        const MAX_FALL_SPEED: f32 = 2.0;  // Very slow terminal velocity
 
         // Get player position for ninja AI
         let _player_pos = if self.player_id < self.entities.len() {
@@ -322,7 +323,7 @@ impl HambertCartridge {
                         if entity.on_ground {
                             entity.vel_x *= 0.75;  // More friction on ground
                         } else {
-                            entity.vel_x *= 0.96;  // Slight air resistance
+                            entity.vel_x *= 0.985;  // Reduced air resistance for better air control
                         }
 
                         // Keep within world bounds
