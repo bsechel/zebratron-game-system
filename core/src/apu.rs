@@ -43,6 +43,20 @@ pub struct Apu {
     // Polyphonic synthesizer for Z-Synth
     synth_oscillators: HashMap<u32, DigitalOscillator>, // MIDI note -> oscillator
     synth_enabled: bool,
+    
+    // Global filter settings for Z-Synth
+    global_filter_enabled: bool,
+    global_filter_type: u8,
+    global_filter_cutoff: f32,
+    global_filter_resonance: f32,
+    
+    // SID-style 3-voice synthesizer for games
+    sid_voice1: DigitalOscillator,
+    sid_voice2: DigitalOscillator,
+    sid_voice3: DigitalOscillator,
+    sid_enabled: bool,
+    sid_volume: f32,
+    poly_volume: f32,
 }
 
 struct PulseChannel {
@@ -208,6 +222,110 @@ impl Apu {
             // Initialize polyphonic synthesizer
             synth_oscillators: HashMap::new(),
             synth_enabled: false,
+            
+            // Initialize global filter settings
+            global_filter_enabled: false,
+            global_filter_type: 0, // Low pass
+            global_filter_cutoff: 1000.0, // Hz
+            global_filter_resonance: 0.5,
+            
+            // Initialize SID-style voices
+            sid_voice1: DigitalOscillator {
+                enabled: false,
+                frequency: 440.0,
+                waveform: 0, // Pulse wave
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.7,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false,
+                    filter_type: 0,
+                    cutoff: 0.8,
+                    resonance: 0.2,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.3,
+                    feedback: 0.4,
+                    mix: 0.2,
+                    buffer: vec![0.0; 44100],
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+                    feedback_filter: 0.0,
+                },
+            },
+            sid_voice2: DigitalOscillator {
+                enabled: false,
+                frequency: 440.0,
+                waveform: 1, // Sawtooth wave
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.7,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false,
+                    filter_type: 0,
+                    cutoff: 0.8,
+                    resonance: 0.2,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.3,
+                    feedback: 0.4,
+                    mix: 0.2,
+                    buffer: vec![0.0; 44100],
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+                    feedback_filter: 0.0,
+                },
+            },
+            sid_voice3: DigitalOscillator {
+                enabled: false,
+                frequency: 440.0,
+                waveform: 2, // Triangle wave
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.7,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false,
+                    filter_type: 0,
+                    cutoff: 0.8,
+                    resonance: 0.2,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.3,
+                    feedback: 0.4,
+                    mix: 0.2,
+                    buffer: vec![0.0; 44100],
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+                    feedback_filter: 0.0,
+                },
+            },
+            sid_enabled: false,
+            sid_volume: 0.8,
+            poly_volume: 0.8,
         }
     }
 
@@ -310,11 +428,28 @@ impl Apu {
 
         // Generate polyphonic synthesizer (always active when notes are playing)
         if self.synth_enabled && !self.synth_oscillators.is_empty() {
+            let mut poly_sample = 0.0;
             for osc in self.synth_oscillators.values_mut() {
                 if osc.enabled {
-                    sample += Self::generate_digital_oscillator_sample(osc, self.sample_rate);
+                    poly_sample += Self::generate_digital_oscillator_sample(osc, self.sample_rate);
                 }
             }
+            sample += poly_sample * self.poly_volume;
+        }
+
+        // Generate SID-style 3-voice synthesizer (for games) - only if voices are active
+        if self.sid_enabled && (self.sid_voice1.enabled || self.sid_voice2.enabled || self.sid_voice3.enabled) {
+            let mut sid_sample = 0.0;
+            if self.sid_voice1.enabled {
+                sid_sample += Self::generate_digital_oscillator_sample(&mut self.sid_voice1, self.sample_rate);
+            }
+            if self.sid_voice2.enabled {
+                sid_sample += Self::generate_digital_oscillator_sample(&mut self.sid_voice2, self.sample_rate);
+            }
+            if self.sid_voice3.enabled {
+                sid_sample += Self::generate_digital_oscillator_sample(&mut self.sid_voice3, self.sample_rate);
+            }
+            sample += sid_sample * self.sid_volume;
         }
 
         sample * self.master_volume
@@ -611,22 +746,7 @@ impl Apu {
         self.sound_test_mode
     }
 
-    // Filter control methods
-    pub fn set_filter_enabled(&mut self, enabled: bool) {
-        self.test_osc.filter.enabled = enabled;
-    }
-
-    pub fn set_filter_cutoff(&mut self, cutoff: f32) {
-        self.test_osc.filter.cutoff = cutoff.clamp(0.0, 1.0);
-    }
-
-    pub fn set_filter_resonance(&mut self, resonance: f32) {
-        self.test_osc.filter.resonance = resonance.clamp(0.0, 1.0);
-    }
-
-    pub fn set_filter_type(&mut self, filter_type: u8) {
-        self.test_osc.filter.filter_type = filter_type.clamp(0, 3);
-    }
+    // Filter control methods (for test oscillator only - Z-Synth uses global filter methods at end of file)
 
     pub fn get_filter_cutoff(&self) -> f32 {
         self.test_osc.filter.cutoff
@@ -743,10 +863,10 @@ impl Apu {
                 detune: 0.0,
                 lfsr: 0x7FFF,
                 filter: ResonantFilter {
-                    enabled: false,
-                    filter_type: 0,
-                    cutoff: 0.8,
-                    resonance: 0.2,
+                    enabled: self.global_filter_enabled,
+                    filter_type: self.global_filter_type,
+                    cutoff: (self.global_filter_cutoff / (self.sample_rate * 0.5)).min(1.0),
+                    resonance: self.global_filter_resonance,
                     x1: 0.0, x2: 0.0,
                     y1: 0.0, y2: 0.0,
                     a0: 1.0, a1: 0.0, a2: 0.0,
@@ -764,6 +884,10 @@ impl Apu {
                     feedback_filter: 0.0,
                 },
             };
+            
+            // Calculate filter coefficients for the new oscillator
+            Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
+            
             self.synth_oscillators.insert(note, osc);
         }
         self.synth_enabled = true;
@@ -785,5 +909,181 @@ impl Apu {
 
     pub fn get_synth_active_note_count(&self) -> usize {
         self.synth_oscillators.len()
+    }
+    
+    // Global filter control methods for Z-Synth
+    #[wasm_bindgen]
+    pub fn set_filter_enabled(&mut self, enabled: bool) {
+        self.global_filter_enabled = enabled;
+        // Apply to all active synth oscillators
+        for osc in self.synth_oscillators.values_mut() {
+            osc.filter.enabled = enabled;
+        }
+    }
+    
+    #[wasm_bindgen]
+    pub fn set_filter_type(&mut self, filter_type: u8) {
+        self.global_filter_type = filter_type;
+        // Apply to all active synth oscillators
+        for osc in self.synth_oscillators.values_mut() {
+            osc.filter.filter_type = filter_type;
+            Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
+        }
+    }
+    
+    #[wasm_bindgen]
+    pub fn set_filter_cutoff(&mut self, cutoff: f32) {
+        self.global_filter_cutoff = cutoff;
+        // Convert Hz to normalized cutoff (0.0 to 1.0)
+        let normalized_cutoff = (cutoff / (self.sample_rate * 0.5)).min(1.0);
+        // Apply to all active synth oscillators
+        for osc in self.synth_oscillators.values_mut() {
+            osc.filter.cutoff = normalized_cutoff;
+            Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
+        }
+    }
+    
+    #[wasm_bindgen]
+    pub fn set_filter_resonance(&mut self, resonance: f32) {
+        self.global_filter_resonance = resonance;
+        // Apply to all active synth oscillators
+        for osc in self.synth_oscillators.values_mut() {
+            osc.filter.resonance = resonance;
+            Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
+        }
+    }
+    
+    // SID-style 3-voice API for game developers
+    #[wasm_bindgen]
+    pub fn sid_voice1_play_note(&mut self, note: u8, waveform: u8) {
+        self.sid_voice1.frequency = Self::midi_to_frequency(note);
+        self.sid_voice1.waveform = waveform.clamp(0, 4);
+        self.sid_voice1.enabled = true;
+        self.sid_enabled = true;
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_voice2_play_note(&mut self, note: u8, waveform: u8) {
+        self.sid_voice2.frequency = Self::midi_to_frequency(note);
+        self.sid_voice2.waveform = waveform.clamp(0, 4);
+        self.sid_voice2.enabled = true;
+        self.sid_enabled = true;
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_voice3_play_note(&mut self, note: u8, waveform: u8) {
+        self.sid_voice3.frequency = Self::midi_to_frequency(note);
+        self.sid_voice3.waveform = waveform.clamp(0, 4);
+        self.sid_voice3.enabled = true;
+        self.sid_enabled = true;
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_voice1_stop(&mut self) {
+        self.sid_voice1.enabled = false;
+        self.check_sid_enabled();
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_voice2_stop(&mut self) {
+        self.sid_voice2.enabled = false;
+        self.check_sid_enabled();
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_voice3_stop(&mut self) {
+        self.sid_voice3.enabled = false;
+        self.check_sid_enabled();
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_stop_all(&mut self) {
+        self.sid_voice1.enabled = false;
+        self.sid_voice2.enabled = false;
+        self.sid_voice3.enabled = false;
+        self.sid_enabled = false;
+    }
+    
+    // Volume control for mixing SID and polyphonic layers
+    #[wasm_bindgen]
+    pub fn set_sid_volume(&mut self, volume: f32) {
+        self.sid_volume = volume.clamp(0.0, 1.0);
+    }
+    
+    #[wasm_bindgen]
+    pub fn set_poly_volume(&mut self, volume: f32) {
+        self.poly_volume = volume.clamp(0.0, 1.0);
+    }
+    
+    // SID filter control (affects all 3 voices like real SID)
+    #[wasm_bindgen]
+    pub fn sid_set_filter_voices(&mut self, voice1: bool, voice2: bool, voice3: bool) {
+        self.sid_voice1.filter.enabled = voice1;
+        self.sid_voice2.filter.enabled = voice2;
+        self.sid_voice3.filter.enabled = voice3;
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_set_filter_cutoff(&mut self, cutoff: f32) {
+        let normalized_cutoff = (cutoff / (self.sample_rate * 0.5)).min(1.0);
+        self.sid_voice1.filter.cutoff = normalized_cutoff;
+        self.sid_voice2.filter.cutoff = normalized_cutoff;
+        self.sid_voice3.filter.cutoff = normalized_cutoff;
+        Self::update_filter_coefficients(&mut self.sid_voice1.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice2.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice3.filter, self.sample_rate);
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_set_filter_resonance(&mut self, resonance: f32) {
+        let clamped_resonance = resonance.clamp(0.0, 10.0);
+        self.sid_voice1.filter.resonance = clamped_resonance;
+        self.sid_voice2.filter.resonance = clamped_resonance;
+        self.sid_voice3.filter.resonance = clamped_resonance;
+        Self::update_filter_coefficients(&mut self.sid_voice1.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice2.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice3.filter, self.sample_rate);
+    }
+    
+    #[wasm_bindgen]
+    pub fn sid_set_filter_type(&mut self, filter_type: u8) {
+        let clamped_type = filter_type.clamp(0, 2);
+        self.sid_voice1.filter.filter_type = clamped_type;
+        self.sid_voice2.filter.filter_type = clamped_type;
+        self.sid_voice3.filter.filter_type = clamped_type;
+        Self::update_filter_coefficients(&mut self.sid_voice1.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice2.filter, self.sample_rate);
+        Self::update_filter_coefficients(&mut self.sid_voice3.filter, self.sample_rate);
+    }
+    
+    // Polyphonic layer API (enhanced Z-Synth access)
+    #[wasm_bindgen]
+    pub fn poly_play_chord(&mut self, notes: Vec<u8>) {
+        // Stop all current notes and play new chord
+        self.synth_oscillators.clear();
+        for note in notes {
+            self.synth_note_on(note as u32);
+        }
+    }
+    
+    #[wasm_bindgen]
+    pub fn poly_play_note(&mut self, note: u8) {
+        self.synth_note_on(note as u32);
+    }
+    
+    #[wasm_bindgen]
+    pub fn poly_stop_note(&mut self, note: u8) {
+        self.synth_note_off(note as u32);
+    }
+    
+    #[wasm_bindgen]
+    pub fn poly_stop_all(&mut self) {
+        self.synth_oscillators.clear();
+        self.synth_enabled = false;
+    }
+    
+    // Helper method to check if any SID voices are active
+    fn check_sid_enabled(&mut self) {
+        self.sid_enabled = self.sid_voice1.enabled || self.sid_voice2.enabled || self.sid_voice3.enabled;
     }
 }

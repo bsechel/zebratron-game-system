@@ -138,6 +138,8 @@ pub struct HambertCartridge {
     text_timer: f32,
     text_index: usize,
     current_level: u32,
+    lives: u32,
+    invulnerability_timer: f32,
 }
 
 #[wasm_bindgen]
@@ -160,6 +162,8 @@ impl HambertCartridge {
             text_timer: 0.0,
             text_index: 0,
             current_level: 1,
+            lives: 3,
+            invulnerability_timer: 0.0,
         };
 
         // Initialize the game world
@@ -169,8 +173,8 @@ impl HambertCartridge {
 
     fn init_world(&mut self) {
         // Create player entity (Hambert) - sprite ID 0
-        // Start Hambert at ground level (200 - sprite height)
-        let player = Entity::new(EntityType::Player, 100.0, 180.0, 0);
+        // Start Hambert at ground level (200 - sprite height = 200 - 32 = 168)
+        let player = Entity::new(EntityType::Player, 100.0, 168.0, 0);
         self.entities.push(player);
         self.player_id = 0;
 
@@ -314,6 +318,9 @@ impl HambertCartridge {
         // Platform collision detection
         self.check_platform_collisions();
 
+        // Enemy collision detection
+        self.check_enemy_collisions();
+
         // Ground collision - simple flat ground at Y=200
         for entity in &mut self.entities {
             if matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
@@ -353,6 +360,73 @@ impl HambertCartridge {
                     entity.on_ground = true;
                     break;
                 }
+            }
+        }
+    }
+
+    fn check_enemy_collisions(&mut self) {
+        if self.player_id >= self.entities.len() {
+            return;
+        }
+
+        // Update invulnerability timer
+        if self.invulnerability_timer > 0.0 {
+            self.invulnerability_timer -= 1.0;
+        }
+
+        let player = &self.entities[self.player_id];
+        let player_bounds = (player.x, player.y, player.x + player.width, player.y + player.height);
+
+        let mut hit_detected = false;
+        let mut hit_shuriken_indices = Vec::new();
+
+        // Check collisions with ninjas and shuriken
+        for (i, entity) in self.entities.iter().enumerate() {
+            if !entity.active || entity.entity_type == EntityType::Player || entity.entity_type == EntityType::Platform {
+                continue;
+            }
+
+            // Check if enemy/projectile overlaps with player
+            if entity.x < player_bounds.2 &&
+               entity.x + entity.width > player_bounds.0 &&
+               entity.y < player_bounds.3 &&
+               entity.y + entity.height > player_bounds.1 {
+
+                // Only damage if not invulnerable
+                if self.invulnerability_timer <= 0.0 {
+                    hit_detected = true;
+                    
+                    // Mark shuriken for deactivation
+                    if entity.entity_type == EntityType::Shuriken {
+                        hit_shuriken_indices.push(i);
+                    }
+                }
+            }
+        }
+
+        // Apply damage and effects after the loop
+        if hit_detected {
+            self.take_damage();
+            // Set invulnerability period (60 frames = 1 second at 60fps)
+            self.invulnerability_timer = 60.0;
+        }
+
+        // Deactivate hit shuriken
+        for index in hit_shuriken_indices {
+            self.entities[index].active = false;
+        }
+    }
+
+    fn take_damage(&mut self) {
+        if self.lives > 0 {
+            self.lives -= 1;
+            self.pending_sounds.push(SoundEffect::EnemyHit);
+            
+            if self.lives == 0 {
+                // Game over - reset to intro
+                self.game_state = GameState::Intro;
+                self.lives = 3; // Reset lives for next game
+                self.init_world(); // Reset world
             }
         }
     }
@@ -507,6 +581,10 @@ impl HambertCartridge {
         }
     }
 
+    pub fn get_lives(&self) -> u32 {
+        self.lives
+    }
+
     pub fn get_intro_text(&self) -> String {
         match self.game_state {
             GameState::Intro => {
@@ -563,6 +641,11 @@ pub struct ZSynthCartridge {
     arpeggio_patterns: HashMap<char, Vec<i32>>,  // Minor arpeggio patterns for each key
     current_arpeggio_notes: HashMap<char, u32>,  // Currently playing arpeggio note for each key
     arpeggio_step: HashMap<char, usize>,  // Current step in arpeggio pattern for each key
+    // MIDI state
+    midi_active_notes: HashMap<u32, bool>,  // Track MIDI notes that are currently on
+    midi_arpeggio_timers: HashMap<u32, f32>,  // Arpeggio timers for MIDI notes
+    midi_arpeggio_step: HashMap<u32, usize>,  // Arpeggio steps for MIDI notes
+    midi_current_arpeggio_notes: HashMap<u32, u32>,  // Current arpeggio note for each MIDI note
 }
 
 #[wasm_bindgen]
@@ -637,6 +720,10 @@ impl ZSynthCartridge {
             arpeggio_patterns,
             current_arpeggio_notes: HashMap::new(),
             arpeggio_step: HashMap::new(),
+            midi_active_notes: HashMap::new(),
+            midi_arpeggio_timers: HashMap::new(),
+            midi_arpeggio_step: HashMap::new(),
+            midi_current_arpeggio_notes: HashMap::new(),
         }
     }
 
@@ -727,6 +814,74 @@ impl ZSynthCartridge {
                 }
             }
         }
+
+        // Update MIDI arpeggio timers and advance notes for held MIDI notes
+        let midi_keys_to_update: Vec<u32> = self.midi_arpeggio_timers.keys().cloned().collect();
+        
+        for midi_note in midi_keys_to_update {
+            if let Some(timer) = self.midi_arpeggio_timers.get_mut(&midi_note) {
+                *timer += dt;
+                
+                // Check if it's time to advance to the next arpeggio note
+                if *timer >= arpeggio_speed {
+                    *timer = 0.0; // Reset timer
+                    
+                    // Stop current arpeggio note
+                    if let Some(current_note) = self.midi_current_arpeggio_notes.get(&midi_note) {
+                        self.pending_note_off.push(*current_note);
+                    }
+                    
+                    // Advance to next step in arpeggio pattern
+                    if let Some(step) = self.midi_arpeggio_step.get_mut(&midi_note) {
+                        let pattern = vec![0, 3, 7, 12, 7, 3]; // Same minor arpeggio pattern
+                        *step = (*step + 1) % pattern.len();
+                        
+                        let pattern_offset = pattern[*step];
+                        let arpeggio_note = (midi_note as i32 + pattern_offset) as u32;
+                        
+                        self.pending_note_on.push(arpeggio_note);
+                        self.midi_current_arpeggio_notes.insert(midi_note, arpeggio_note);
+                    }
+                }
+            }
+        }
+    }
+
+    // MIDI note handlers
+    pub fn handle_midi_note_on(&mut self, note: u32) {
+        if !self.midi_active_notes.contains_key(&note) {
+            self.midi_active_notes.insert(note, true);
+            
+            // Initialize arpeggio state for this MIDI note
+            self.midi_arpeggio_timers.insert(note, 0.0);
+            self.midi_arpeggio_step.insert(note, 0);
+            
+            // Play the first note of the arpeggio (root note)
+            self.pending_note_on.push(note);
+            self.midi_current_arpeggio_notes.insert(note, note);
+        }
+    }
+
+    pub fn handle_midi_note_off(&mut self, note: u32) {
+        if self.midi_active_notes.remove(&note).is_some() {
+            // Stop the current arpeggio note
+            if let Some(current_arp_note) = self.midi_current_arpeggio_notes.remove(&note) {
+                self.pending_note_off.push(current_arp_note);
+            }
+            
+            // Clean up arpeggio state
+            self.midi_arpeggio_timers.remove(&note);
+            self.midi_arpeggio_step.remove(&note);
+        }
+    }
+
+    // Get active MIDI notes for display
+    pub fn get_active_midi_notes(&self) -> Vec<u32> {
+        self.midi_active_notes.keys().cloned().collect()
+    }
+
+    pub fn get_active_midi_note_count(&self) -> usize {
+        self.midi_active_notes.len()
     }
 
     // Get pending note on events for audio processing

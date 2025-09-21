@@ -7,6 +7,7 @@ mod memory;
 mod system;
 mod system_cartridge;
 mod cartridge;
+mod sprite_converter;
 
 use wasm_bindgen::prelude::*;
 
@@ -31,3 +32,4 @@ pub use system::ZebratronSystem;
 pub use system_cartridge::ZebratronCartridgeSystem;
 pub use cartridge::HambertCartridge;
 pub use cartridge::ZSynthCartridge;
+pub use sprite_converter::{SpriteConverter, SpriteData};

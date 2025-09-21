@@ -289,6 +289,9 @@ pub struct Ppu {
     intro_text: String,
     // Z-Synth piano mode
     zsynth_mode: bool,
+    
+    // HUD/UI data
+    hud_lives: u8,
 }
 
 impl Ppu {
@@ -310,6 +313,7 @@ impl Ppu {
             intro_mode: false,
             intro_text: String::new(),
             zsynth_mode: false,
+            hud_lives: 3,
         }
     }
 
@@ -381,6 +385,10 @@ impl Ppu {
         self.zsynth_mode = zsynth_mode;
     }
 
+    pub fn set_lives(&mut self, lives: u32) {
+        self.hud_lives = lives as u8;
+    }
+
     // Rendering
     pub fn render(&mut self) {
         if self.color_test_mode {
@@ -418,6 +426,9 @@ impl Ppu {
                 self.render_sprite(sprite.x - scroll_x, sprite.y - scroll_y, sprite.sprite_id);
             }
         }
+
+        // Render lives counter
+        self.render_lives_counter();
 
         // Debug: Render coordinate display
         self.render_debug_coordinates();
@@ -622,6 +633,7 @@ impl Ppu {
             2 => (24, 24),  // Enemy
             3 => (20, 32),  // Ninja
             4 => (12, 12),  // Shuriken
+            5 => (12, 12),  // Small Hambert head (for lives counter)
             10 => (25, 80), // White piano key (unpressed)
             11 => (25, 80), // White piano key (pressed)
             12 => (15, 50), // Black piano key (unpressed)
@@ -656,11 +668,12 @@ impl Ppu {
 
     fn get_sprite_pixel(&self, sprite_id: u32, x: u32, y: u32) -> u8 {
         match sprite_id {
-            0 => self.get_hambert_pixel(x, y),      // Player/Hambert
+            0 => self.get_new_hambert_pixel(x, y),  // Player/Hambert (new improved sprite)
             1 => self.get_platform_pixel(x, y),     // Platform
             2 => self.get_enemy_pixel(x, y),        // Basic enemy
             3 => self.get_ninja_pixel(x, y),        // Ninja
             4 => self.get_shuriken_pixel(x, y),     // Shuriken
+            5 => self.get_small_hambert_head_pixel(x, y), // Small Hambert head
             10 => self.get_white_piano_key_pixel(x, y, false), // White key unpressed
             11 => self.get_white_piano_key_pixel(x, y, true),  // White key pressed
             12 => self.get_black_piano_key_pixel(x, y, false), // Black key unpressed
@@ -908,16 +921,100 @@ impl Ppu {
         self.render_large_hambert_sprite(sprite_x, sprite_y, sprite_scale);
 
         // Render intro text below the sprite
-        let text_y = sprite_y + 28 * sprite_scale + 20; // Below the large sprite (28 is new height)
+        let text_y = sprite_y + 32 * sprite_scale + 20; // Below the large sprite (32 is new height)
         let text_color = MASTER_PALETTE[15]; // White
         self.render_intro_text(text_y, text_color);
     }
 
+    fn get_small_hambert_head_pixel(&self, x: u32, y: u32) -> u8 {
+        // Small 12x12 version of Hambert's head for lives counter
+        if x >= 12 || y >= 12 {
+            return 0; // Transparent outside bounds
+        }
+
+        // Extract just the head portion (rows 1-12) from the full sprite and scale down
+        // This is a simplified version of Hambert's head
+        let head_data = [
+            [0,0,0,1,1,1,1,1,1,0,0,0],  // Top of head outline
+            [0,0,1,9,8,8,1,1,9,1,0,0],  // Head with some facial features
+            [0,1,9,9,9,9,9,10,9,9,1,0], // More head detail
+            [0,1,9,8,8,9,10,8,8,9,1,0], // Eyes area
+            [1,9,9,10,9,7,9,10,9,9,8,1], // More facial features
+            [9,10,10,10,9,9,9,9,11,11,9,0], // Face shading
+            [9,9,10,9,9,7,8,7,7,9,8,0], // Nose/mouth area
+            [8,9,7,7,7,7,7,7,7,7,7,8], // Lower face
+            [7,10,11,10,10,10,10,10,10,8,8,0], // Chin area
+            [10,9,7,10,10,10,10,10,10,10,9,8], // Lower head
+            [10,9,7,10,8,8,8,10,10,8,9,0], // Jaw line
+            [11,7,7,10,8,10,8,8,10,7,9,11], // Bottom of head
+        ];
+
+        head_data[y as usize][x as usize]
+    }
+
+    fn render_lives_counter(&mut self) {
+        // Get lives count from the HUD register (set by cartridge)
+        let lives = self.hud_lives as u32;
+        let start_x = 10; // 10 pixels from left edge
+        let start_y = 10; // 10 pixels from top edge
+        let spacing = 20; // 20 pixels between each life icon
+
+        for i in 0..lives {
+            let x = start_x + (i * spacing);
+            self.render_sprite(x as f32, start_y as f32, 5); // Sprite ID 5 is small Hambert head
+        }
+    }
+
+    fn get_new_hambert_pixel(&self, x: u32, y: u32) -> u8 {
+        // New improved Hambert idle sprite data (30x32) - version 2 with better outlines
+        if x >= 30 || y >= 32 {
+            return 0; // Transparent outside bounds
+        }
+
+        let pixel_data = [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,1,1,1,9,8,8,1,1,1,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,9,9,9,9,9,10,9,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,9,9,9,8,8,9,10,8,8,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,10,9,9,10,9,7,9,10,9,9,8,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,9,10,10,10,10,9,9,9,9,11,11,9,9,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,9,9,10,9,9,9,7,8,7,7,9,8,9,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,8,9,7,7,7,7,7,7,7,7,7,7,7,8,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,9,7,10,11,10,10,10,10,10,10,10,10,10,10,8,8,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,10,9,7,10,10,10,10,10,10,10,10,10,10,10,10,9,8,0,0,0,0,0,0],
+            [0,0,0,0,0,0,10,10,9,7,10,10,8,8,8,10,10,10,8,8,8,10,10,8,9,0,0,0,0,0],
+            [0,0,0,0,0,11,10,11,7,7,10,8,8,10,8,8,10,10,8,10,8,8,10,7,9,11,0,0,0,0],
+            [0,0,0,0,9,10,10,10,7,10,10,0,0,0,0,8,9,8,0,0,0,0,10,7,7,11,11,0,0,0],
+            [0,0,0,0,10,10,11,7,7,10,10,9,14,0,15,11,8,12,15,0,15,8,10,9,7,10,11,0,0,0],
+            [0,0,0,10,10,11,10,7,10,10,10,10,15,15,15,11,10,10,15,15,15,10,10,7,7,9,11,0,0,0],
+            [0,0,0,10,10,10,11,7,10,10,10,10,10,9,10,10,12,10,9,9,9,10,10,7,7,10,11,0,0,0],
+            [0,0,0,0,11,9,8,7,10,10,10,10,10,10,9,8,0,9,9,9,10,10,11,7,6,9,0,0,0,0],
+            [0,0,0,0,0,0,0,5,10,10,10,10,10,9,9,0,0,0,10,9,10,10,10,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,7,10,9,9,10,10,10,12,0,0,0,11,10,11,10,10,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,7,10,10,10,10,10,10,0,7,5,10,0,10,10,9,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,7,10,10,10,10,10,0,10,12,12,9,10,0,10,9,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,7,7,10,11,10,10,10,7,12,12,9,10,10,10,10,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,7,10,10,10,10,11,8,27,12,9,10,10,10,10,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,7,7,7,7,10,10,10,10,10,10,10,10,9,8,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,18,18,18,18,10,10,10,10,10,10,8,7,18,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,18,18,18,18,6,5,4,6,7,6,7,7,18,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,18,18,18,18,10,8,7,6,6,6,18,18,18,18,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,18,0,0,0,0],
+            [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,18,0,0,0],
+            [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,0,0,0],
+            [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,0,0,0],
+        ];
+
+        // Return the pixel value directly (already mapped to correct palette indices)
+        pixel_data[y as usize][x as usize]
+    }
+
     fn render_large_hambert_sprite(&mut self, base_x: i32, base_y: i32, scale: i32) {
-        // Render scaled up Hambert sprite using the new sprite data
-        for py in 0..28 { // New sprite height
-            for px in 0..32 { // New sprite width
-                let color_index = self.get_hambert_pixel(px, py);
+        // Render scaled up Hambert sprite using the new improved sprite data
+        for py in 0..32 { // New sprite height (30x32)
+            for px in 0..30 { // New sprite width
+                let color_index = self.get_new_hambert_pixel(px, py);
                 if color_index > 0 { // Only render non-transparent pixels
                     let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
 

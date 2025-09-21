@@ -328,6 +328,11 @@ impl ZebratronCartridgeSystem {
     }
 
     pub fn render(&mut self) {
+        // Update PPU with current game state
+        if let Some(cartridge) = &self.hambert_cartridge {
+            self.ppu.set_lives(cartridge.get_lives());
+        }
+        
         self.ppu.render();
     }
 
@@ -492,14 +497,106 @@ impl ZebratronCartridgeSystem {
         self.current_cartridge_type
     }
 
+    // MIDI handlers for Z-Synth
+    pub fn handle_midi_note_on(&mut self, note: u32) {
+        if self.current_cartridge_type == 2 {
+            if let Some(ref mut cartridge) = self.zsynth_cartridge {
+                cartridge.handle_midi_note_on(note);
+                // Process audio immediately for responsive playback
+                self.process_cartridge_audio();
+            }
+        }
+    }
+
+    pub fn handle_midi_note_off(&mut self, note: u32) {
+        if self.current_cartridge_type == 2 {
+            if let Some(ref mut cartridge) = self.zsynth_cartridge {
+                cartridge.handle_midi_note_off(note);
+                // Process audio immediately for responsive playback
+                self.process_cartridge_audio();
+            }
+        }
+    }
+
     // Get Z-Synth info for display
     pub fn get_zsynth_info(&self) -> String {
         if let Some(ref cartridge) = self.zsynth_cartridge {
-            format!("Z-Synth Active - Notes: {} | APU Notes: {}", 
+            format!("Z-Synth Active - KB Notes: {} | MIDI Notes: {} | APU Notes: {}", 
                 cartridge.get_active_note_count(),
+                cartridge.get_active_midi_note_count(),
                 self.apu.get_synth_active_note_count())
         } else {
             String::from("Z-Synth not loaded")
         }
+    }
+
+    // SID-style 3-voice API delegation to APU
+    pub fn sid_voice1_play_note(&mut self, note: u8, waveform: u8) {
+        self.apu.sid_voice1_play_note(note, waveform);
+    }
+
+    pub fn sid_voice2_play_note(&mut self, note: u8, waveform: u8) {
+        self.apu.sid_voice2_play_note(note, waveform);
+    }
+
+    pub fn sid_voice3_play_note(&mut self, note: u8, waveform: u8) {
+        self.apu.sid_voice3_play_note(note, waveform);
+    }
+
+    pub fn sid_voice1_stop(&mut self) {
+        self.apu.sid_voice1_stop();
+    }
+
+    pub fn sid_voice2_stop(&mut self) {
+        self.apu.sid_voice2_stop();
+    }
+
+    pub fn sid_voice3_stop(&mut self) {
+        self.apu.sid_voice3_stop();
+    }
+
+    pub fn sid_stop_all(&mut self) {
+        self.apu.sid_stop_all();
+    }
+
+    pub fn set_sid_volume(&mut self, volume: f32) {
+        self.apu.set_sid_volume(volume);
+    }
+
+    pub fn set_poly_volume(&mut self, volume: f32) {
+        self.apu.set_poly_volume(volume);
+    }
+
+    pub fn sid_set_filter_voices(&mut self, voice1: bool, voice2: bool, voice3: bool) {
+        self.apu.sid_set_filter_voices(voice1, voice2, voice3);
+    }
+
+    pub fn sid_set_filter_cutoff(&mut self, cutoff: f32) {
+        self.apu.sid_set_filter_cutoff(cutoff);
+    }
+
+    pub fn sid_set_filter_resonance(&mut self, resonance: f32) {
+        self.apu.sid_set_filter_resonance(resonance);
+    }
+
+    pub fn sid_set_filter_type(&mut self, filter_type: u8) {
+        self.apu.sid_set_filter_type(filter_type);
+    }
+
+    // Polyphonic layer API delegation to APU
+    pub fn poly_play_chord(&mut self, notes: &[u8]) {
+        self.apu.poly_play_chord(notes.to_vec());
+    }
+
+    pub fn poly_play_note(&mut self, note: u8) {
+        self.apu.poly_play_note(note);
+    }
+
+    pub fn poly_stop_note(&mut self, note: u8) {
+        self.apu.poly_stop_note(note);
+    }
+
+    pub fn poly_stop_all(&mut self) {
+        self.apu.poly_stop_all();
     }
 }
