@@ -6,7 +6,7 @@ description = "Core WebAssembly implementation of the ZebratronGameSystem"
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = { workspace = true, features = ["serde-serialize"] }

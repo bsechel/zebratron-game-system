@@ -24,7 +24,7 @@ pub trait AudioCommands {
 pub enum EntityType {
     Player,
     Enemy,
-    Ninja,
+    Hexagnome,
     Platform,
     Projectile,
     Shuriken,
@@ -49,6 +49,7 @@ pub struct Entity {
     pub is_dying: bool,
     pub death_timer: f32,
     pub death_flash_timer: f32,
+    pub facing_left: bool,
 }
 
 impl Entity {
@@ -56,7 +57,7 @@ impl Entity {
         let (width, height) = match entity_type {
             EntityType::Player => (32.0, 28.0),  // Hambert size (larger)
             EntityType::Enemy => (24.0, 24.0),
-            EntityType::Ninja => (20.0, 32.0),   // Taller, more figure-like
+            EntityType::Hexagnome => (20.0, 28.0),   // Hexagnome dimensions (scaled for performance)
             EntityType::Platform => (64.0, 16.0),
             EntityType::Projectile => (8.0, 8.0),
             EntityType::Shuriken => (12.0, 12.0), // Spinning projectile
@@ -77,7 +78,7 @@ impl Entity {
             health: match entity_type {
                 EntityType::Player => 3,
                 EntityType::Enemy => 1,
-                EntityType::Ninja => 2,
+                EntityType::Hexagnome => 2,
                 _ => 1,
             },
             animation_frame: 0,
@@ -85,6 +86,7 @@ impl Entity {
             is_dying: false,
             death_timer: 0.0,
             death_flash_timer: 0.0,
+            facing_left: false,
         }
     }
 }
@@ -202,12 +204,12 @@ impl HambertCartridge {
         // Add collectible hamberries scattered throughout the level - sprite ID 6
         self.spawn_hamberries();
 
-        // Add some ninja enemies - sprite ID 3
-        // Place ninjas on platforms and ground level
-        self.entities.push(Entity::new(EntityType::Ninja, 300.0, 150.0, 3)); // On first platform
-        self.entities.push(Entity::new(EntityType::Ninja, 500.0, 168.0, 3)); // On ground
-        self.entities.push(Entity::new(EntityType::Ninja, 900.0, 98.0, 3));  // On high platform
-        self.entities.push(Entity::new(EntityType::Ninja, 1300.0, 88.0, 3)); // On higher platform
+        // Add some hexagnome enemies - sprite ID 3
+        // Place hexagnomes on platforms and ground level
+        self.entities.push(Entity::new(EntityType::Hexagnome, 300.0, 150.0, 3)); // On first platform
+        self.entities.push(Entity::new(EntityType::Hexagnome, 500.0, 168.0, 3)); // On ground
+        self.entities.push(Entity::new(EntityType::Hexagnome, 900.0, 98.0, 3));  // On high platform
+        self.entities.push(Entity::new(EntityType::Hexagnome, 1300.0, 88.0, 3)); // On higher platform
     }
 
     pub fn update_game(&mut self, up: bool, down: bool, left: bool, right: bool) {
@@ -224,8 +226,8 @@ impl HambertCartridge {
                 // Update physics
                 self.update_physics();
 
-                // Spawn ninjas
-                self.update_ninja_spawning();
+                // Spawn hexagnomes
+                self.update_hexagnome_spawning();
 
                 // Add pending shuriken
                 self.entities.extend(self.pending_shuriken.drain(..));
@@ -270,7 +272,7 @@ impl HambertCartridge {
         const GRAVITY: f32 = 0.05;  // Very slow gravity for floaty jumps
         const MAX_FALL_SPEED: f32 = 2.0;  // Very slow terminal velocity
 
-        // Get player position for ninja AI
+        // Get player position for hexagnome AI
         let _player_pos = if self.player_id < self.entities.len() {
             Some((self.entities[self.player_id].x, self.entities[self.player_id].y))
         } else {
@@ -283,7 +285,7 @@ impl HambertCartridge {
             }
 
             match entity.entity_type {
-                EntityType::Player | EntityType::Ninja => {
+                EntityType::Player | EntityType::Hexagnome => {
                     // Handle death animation for player
                     if entity.is_dying {
                         entity.death_timer += 1.0;
@@ -334,7 +336,7 @@ impl HambertCartridge {
                     // Shuriken physics
                     entity.x += entity.vel_x;
                     entity.y += entity.vel_y;
-                    entity.vel_y += 0.1; // Reduced gravity from 0.2 to 0.1
+                    entity.vel_y += 0.005; // Minimal gravity to maintain range at slow speed
 
                     // Rotate animation
                     entity.animation_timer += 1.0;
@@ -363,7 +365,7 @@ impl HambertCartridge {
 
         // Ground collision - simple flat ground at Y=200
         for entity in &mut self.entities {
-            if matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
+            if matches!(entity.entity_type, EntityType::Player | EntityType::Hexagnome) {
                 // Let dying players fall through the floor
                 if entity.is_dying {
                     continue; // Skip ground collision for dying entities
@@ -388,7 +390,7 @@ impl HambertCartridge {
         }
 
         for entity in &mut self.entities {
-            if !matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
+            if !matches!(entity.entity_type, EntityType::Player | EntityType::Hexagnome) {
                 continue;
             }
 
@@ -436,13 +438,26 @@ impl HambertCartridge {
         let mut hit_detected = false;
         let mut hit_shuriken_indices = Vec::new();
 
-        // Check collisions with ninjas and shuriken
+        // Check collisions with hexagnomes and shuriken (with spatial optimization)
         for (i, entity) in self.entities.iter().enumerate() {
             if !entity.active || entity.entity_type == EntityType::Player || entity.entity_type == EntityType::Platform || entity.entity_type == EntityType::Collectible {
                 continue;
             }
 
-            // Check if enemy/projectile overlaps with player
+            // Spatial optimization: only check collision if entities are reasonably close
+            let player_center_x = player_bounds.0 + (player_bounds.2 - player_bounds.0) / 2.0;
+            let player_center_y = player_bounds.1 + (player_bounds.3 - player_bounds.1) / 2.0;
+            let entity_center_x = entity.x + entity.width / 2.0;
+            let entity_center_y = entity.y + entity.height / 2.0;
+            
+            let distance_squared = (player_center_x - entity_center_x).powi(2) + (player_center_y - entity_center_y).powi(2);
+            
+            // Only check detailed collision if within reasonable distance (80 pixels)
+            if distance_squared > 80.0 * 80.0 {
+                continue;
+            }
+
+            // Check if enemy/projectile overlaps with player (bounding box collision)
             if entity.x < player_bounds.2 &&
                entity.x + entity.width > player_bounds.0 &&
                entity.y < player_bounds.3 &&
@@ -488,13 +503,26 @@ impl HambertCartridge {
         let player_bounds = (player.x, player.y, player.x + player.width, player.y + player.height);
         let mut collected_indices = Vec::new();
 
-        // Check collisions with collectibles (hamberries)
+        // Check collisions with collectibles (hamberries) - with spatial optimization
         for (i, entity) in self.entities.iter().enumerate() {
             if !entity.active || entity.entity_type != EntityType::Collectible {
                 continue;
             }
 
-            // Check if collectible overlaps with player
+            // Spatial optimization: only check collision if reasonably close
+            let player_center_x = player_bounds.0 + (player_bounds.2 - player_bounds.0) / 2.0;
+            let player_center_y = player_bounds.1 + (player_bounds.3 - player_bounds.1) / 2.0;
+            let entity_center_x = entity.x + entity.width / 2.0;
+            let entity_center_y = entity.y + entity.height / 2.0;
+            
+            let distance_squared = (player_center_x - entity_center_x).powi(2) + (player_center_y - entity_center_y).powi(2);
+            
+            // Only check detailed collision if within collection distance (40 pixels)
+            if distance_squared > 40.0 * 40.0 {
+                continue;
+            }
+
+            // Check if collectible overlaps with player (bounding box collision)
             if entity.x < player_bounds.2 &&
                entity.x + entity.width > player_bounds.0 &&
                entity.y < player_bounds.3 &&
@@ -536,39 +564,57 @@ impl HambertCartridge {
         }
     }
 
-    fn update_ninja_spawning(&mut self) {
-        if self.frame_count % 300 == 0 {
+    fn update_hexagnome_spawning(&mut self) {
+        // Count existing hexagnomes
+        let hexagnome_count = self.entities.iter().filter(|e| e.entity_type == EntityType::Hexagnome && e.active).count();
+        
+        // Only spawn if we have fewer than 3 hexagnomes and it's time to spawn
+        if hexagnome_count < 3 && self.frame_count % 600 == 0 {  // Limit to 3 hexagnomes max
             let spawn_x = if self.entities.len() % 2 == 0 { 0.0 } else { self.world_width - 20.0 };
-            let ninja = Entity::new(EntityType::Ninja, spawn_x, 100.0, 3); // sprite ID 3 for ninja
-            self.entities.push(ninja);
+            let hexagnome = Entity::new(EntityType::Hexagnome, spawn_x, 100.0, 3); // sprite ID 3 for hexagnome
+            self.entities.push(hexagnome);
         }
 
-        // Ninja AI and shuriken throwing
+        // Hexagnome AI and shuriken throwing
         if let Some((player_x, player_y)) = self.get_player_position() {
             for entity in &mut self.entities {
-                if entity.entity_type == EntityType::Ninja && entity.active {
+                if entity.entity_type == EntityType::Hexagnome && entity.active {
                     let dx = player_x - entity.x;
                     let distance = dx.abs();
 
                     if distance > 50.0 {
+                        // Move toward player when far away
                         if dx > 0.0 {
-                            entity.vel_x += 0.05; // Reduced from 0.1 to 0.05 (half speed)
+                            entity.vel_x += 0.05;
+                            entity.facing_left = true; // Face right toward player (flipped)
                         } else {
-                            entity.vel_x -= 0.05; // Reduced from 0.1 to 0.05 (half speed)
+                            entity.vel_x -= 0.05;
+                            entity.facing_left = false; // Face left toward player (flipped)
                         }
-                        entity.vel_x = entity.vel_x.max(-1.0).min(1.0); // Reduced max speed from 2.0 to 1.0
+                        entity.vel_x = entity.vel_x.max(-1.0).min(1.0);
+                    } else if distance < 30.0 {
+                        // Change direction when too close - move away from player
+                        if dx > 0.0 {
+                            entity.vel_x -= 0.1; // Move left (away from player on right)
+                            entity.facing_left = false; // Face left while retreating (flipped)
+                        } else {
+                            entity.vel_x += 0.1; // Move right (away from player on left)
+                            entity.facing_left = true; // Face right while retreating (flipped)
+                        }
+                        entity.vel_x = entity.vel_x.max(-1.2).min(1.2); // Slightly faster when retreating
                     }
 
-                    // Throw shuriken occasionally
-                    if distance < 200.0 && distance > 50.0 && self.frame_count % 120 == 0 {
+                    // Throw shuriken rarely
+                    if distance < 200.0 && distance > 50.0 && self.frame_count % 300 == 0 {
                         let mut shuriken = Entity::new(EntityType::Shuriken, entity.x + 10.0, entity.y + 10.0, 4); // sprite ID 4 for shuriken
                         let dy = player_y - entity.y;
-                        let speed = 2.0; // Reduced from 4.0 to 2.0 (half speed)
+                        let speed = 0.6; // Really slow speed
                         let distance = (dx * dx + dy * dy).sqrt();
 
                         if distance > 0.0 {
-                            shuriken.vel_x = (dx / distance) * speed;
-                            shuriken.vel_y = (dy / distance) * speed;
+                            // More horizontal trajectory: reduce arc height
+                            shuriken.vel_x = (dx / distance) * speed * 1.2; // 20% faster horizontally
+                            shuriken.vel_y = (dy / distance) * speed * 0.15 - 0.3; // Reduced upward bias for lower arc
                         }
 
                         self.pending_shuriken.push(shuriken);
@@ -631,6 +677,7 @@ impl HambertCartridge {
         js_sys::Reflect::set(&obj, &"sprite_id".into(), &entity.sprite_id.into()).unwrap();
         js_sys::Reflect::set(&obj, &"active".into(), &entity.active.into()).unwrap();
         js_sys::Reflect::set(&obj, &"entity_type".into(), &(entity.entity_type as u32).into()).unwrap();
+        js_sys::Reflect::set(&obj, &"facing_left".into(), &entity.facing_left.into()).unwrap();
 
         Some(obj)
     }

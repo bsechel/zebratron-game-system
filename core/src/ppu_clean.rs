@@ -256,6 +256,7 @@ pub struct SpriteData {
     pub y: f32,
     pub sprite_id: u32,
     pub active: bool,
+    pub flip_horizontal: bool,
 }
 
 pub struct Ppu {
@@ -362,12 +363,13 @@ impl Ppu {
         self.sprites.clear();
     }
 
-    pub fn add_sprite(&mut self, x: f32, y: f32, sprite_id: u32, active: bool) {
+    pub fn add_sprite(&mut self, x: f32, y: f32, sprite_id: u32, active: bool, flip_horizontal: bool) {
         self.sprites.push(SpriteData {
             x,
             y,
             sprite_id,
             active,
+            flip_horizontal,
         });
     }
 
@@ -441,7 +443,7 @@ impl Ppu {
         // Render sprites provided by cartridge
         for sprite in &sprites {
             if sprite.active {
-                self.render_sprite(sprite.x - scroll_x, sprite.y - scroll_y, sprite.sprite_id);
+                self.render_sprite(sprite.x - scroll_x, sprite.y - scroll_y, sprite.sprite_id, sprite.flip_horizontal);
             }
         }
 
@@ -643,14 +645,14 @@ impl Ppu {
         }
     }
 
-    fn render_sprite(&mut self, x: f32, y: f32, sprite_id: u32) {
+    fn render_sprite(&mut self, x: f32, y: f32, sprite_id: u32, flip_horizontal: bool) {
         // Get sprite dimensions based on sprite type
         let (sprite_width, sprite_height) = match sprite_id {
             0 => (32, 28),  // Hambert (larger)
             1 => (32, 16),  // Platform
             2 => (24, 24),  // Enemy
             6 => (16, 16),  // Hamberry
-            3 => (20, 32),  // Ninja
+            3 => (20, 28),  // Hexagnome (scaled down for performance)
             4 => (12, 12),  // Shuriken
             5 => (12, 12),  // Small Hambert head (for lives counter)
             10 => (25, 80), // White piano key (unpressed)
@@ -668,7 +670,14 @@ impl Ppu {
                 if screen_x >= 0 && screen_x < SCREEN_WIDTH as i32 &&
                    screen_y >= 0 && screen_y < SCREEN_HEIGHT as i32 {
 
-                    let color_index = self.get_sprite_pixel(sprite_id, px, py);
+                    // Apply horizontal flipping if needed
+                    let sprite_px = if flip_horizontal {
+                        sprite_width - 1 - px
+                    } else {
+                        px
+                    };
+                    
+                    let color_index = self.get_sprite_pixel(sprite_id, sprite_px, py);
                     if color_index > 0 {
                         let mut color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
                         
@@ -711,7 +720,7 @@ impl Ppu {
             0 => self.get_new_hambert_pixel(x, y),  // Player/Hambert (new improved sprite)
             1 => self.get_platform_pixel(x, y),     // Platform
             2 => self.get_enemy_pixel(x, y),        // Basic enemy
-            3 => self.get_ninja_pixel(x, y),        // Ninja
+            3 => self.get_hexagnome_pixel(x, y),    // Hexagnome
             4 => self.get_shuriken_pixel(x, y),     // Shuriken
             5 => self.get_small_hambert_head_pixel(x, y), // Small Hambert head
             6 => self.get_hamberry_pixel(x, y),     // Hamberry collectible
@@ -814,42 +823,57 @@ impl Ppu {
         }
     }
 
-    fn get_ninja_pixel(&self, x: u32, y: u32) -> u8 {
-        // 20x32 ninja sprite
-        if y < 8 {
-            // Head area
-            if (x >= 6 && x < 14) && (y >= 1 && y < 7) {
-                if (x == 7 || x == 12) && (y == 3 || y == 4) {
-                    return 15; // Eyes (white)
-                }
-                return 1; // Head (black/dark)
-            }
-            return 0;
-        } else if y >= 8 && y < 20 {
-            // Body/torso
-            if x >= 5 && x < 15 {
-                if y >= 10 && y < 16 {
-                    return 8; // Dark gray ninja outfit
-                }
-                if (x >= 3 && x < 6) || (x >= 14 && x < 17) {
-                    return 8; // Arms
-                }
-                return 1; // Black outfit
-            }
-            if ((x >= 1 && x < 4) || (x >= 16 && x < 19)) && (y >= 12 && y < 16) {
-                return 8; // Extended arms
-            }
-            return 0;
-        } else {
-            // Legs
-            if (x >= 6 && x < 8) || (x >= 12 && x < 14) {
-                return 8; // Legs
-            }
-            if y >= 29 && ((x >= 4 && x < 9) || (x >= 11 && x < 16)) {
-                return 0; // Black feet/shoes
-            }
+    fn get_hexagnome_pixel(&self, x: u32, y: u32) -> u8 {
+        // 20x28 hexagnome sprite - full bitmap with scaling
+        if x >= 20 || y >= 28 {
+            return 0; // Transparent outside bounds
+        }
+        
+        // Scale coordinates to original sprite size for lookup
+        let orig_x = (x * 26) / 20;  // Scale from 20 to 26
+        let orig_y = (y * 32) / 28;  // Scale from 28 to 32
+        
+        if orig_x >= 26 || orig_y >= 32 {
             return 0;
         }
+        
+        // Original hexagnome pixel data - kept as static for performance
+        static HEXAGNOME_PIXEL_DATA: [[u8; 26]; 32] = [
+            [0,0,0,0,0,0,0,0,1,3,3,4,4,3,3,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,3,0,3,3,4,4,3,3,2,1,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,1,6,5,2,3,3,3,2,2,2,4,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,8,13,7,2,2,2,2,2,4,4,4,3,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,13,11,11,4,2,2,3,4,5,4,4,3,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,11,10,10,9,3,0,2,3,2,2,2,4,5,4,0,0,0,0,0,0],
+            [0,0,0,0,0,9,12,9,3,1,1,1,1,2,1,2,5,4,5,5,3,0,0,0,0,0],
+            [0,0,0,0,0,0,4,1,1,1,1,1,2,2,3,5,6,5,4,5,4,4,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,1,1,2,3,5,5,6,5,4,5,4,3,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,1,2,4,5,5,6,4,4,6,5,2,2,0,0,0],
+            [0,0,0,0,0,0,0,0,0,3,1,1,3,4,5,6,6,4,4,5,6,2,2,0,0,0],
+            [0,0,0,0,0,0,0,0,3,1,1,1,3,5,5,6,5,3,4,5,5,3,3,0,0,0],
+            [0,0,0,0,0,0,3,3,3,1,0,1,3,5,5,6,5,3,4,4,5,3,3,0,0,0],
+            [0,3,3,3,3,3,3,3,3,1,2,3,3,4,5,6,3,3,4,4,6,3,2,0,0,0],
+            [0,3,13,13,12,3,3,3,2,3,3,3,4,4,4,4,3,3,4,5,4,1,0,1,0,0],
+            [0,0,3,13,12,3,3,3,3,3,3,3,4,3,3,4,4,4,4,5,5,3,2,1,0,0],
+            [0,0,3,3,3,0,0,3,3,3,3,4,3,2,3,5,4,4,4,5,4,3,5,3,0,0],
+            [0,0,0,0,0,0,3,3,3,3,2,2,1,1,4,5,4,4,4,4,4,4,2,3,3,0],
+            [0,0,0,0,0,2,3,3,2,2,1,1,1,1,2,4,4,4,4,4,4,4,2,2,3,0],
+            [0,0,0,0,0,5,2,2,1,0,1,2,3,3,3,3,4,4,4,4,4,3,2,2,3,0],
+            [0,0,0,0,3,12,12,8,1,2,2,3,4,4,3,3,4,4,4,4,4,3,2,2,3,0],
+            [0,0,0,0,3,13,13,7,3,3,3,4,4,4,3,3,3,4,4,4,3,3,2,3,2,0],
+            [0,0,0,0,3,3,3,3,3,3,3,3,4,5,4,4,4,4,4,3,3,2,2,3,3,0],
+            [0,0,0,0,0,0,0,0,3,3,3,2,3,4,5,5,4,4,3,3,3,2,1,3,0,0],
+            [0,0,0,0,0,0,0,0,3,3,4,3,2,2,3,4,4,3,3,3,3,2,1,3,0,0],
+            [0,0,0,0,0,0,0,4,3,3,4,5,4,3,3,3,4,3,3,3,2,2,3,3,0,0],
+            [0,0,0,0,0,0,0,3,3,3,4,4,4,4,4,3,3,3,3,3,2,2,3,3,0,0],
+            [0,0,0,0,0,0,0,3,3,2,3,4,4,4,4,3,3,3,3,3,2,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,3,3,3,3,3,2,3,3,3,3,3,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,3,3,3,3,3,2,3,3,3,3,3,3,3,0,0,0,0,0],
+            [0,0,0,0,0,0,3,3,3,3,3,3,2,3,3,3,3,3,3,3,3,0,0,0,0,0],
+        ];
+
+        HEXAGNOME_PIXEL_DATA[orig_y as usize][orig_x as usize]
     }
 
     fn get_shuriken_pixel(&self, x: u32, y: u32) -> u8 {
@@ -928,18 +952,133 @@ impl Ppu {
         }
     }
 
-    fn render_color_test(&mut self) {
-        // Render color test pattern
-        for y in 0..SCREEN_HEIGHT {
-            for x in 0..SCREEN_WIDTH {
-                let color_index = ((x / 16) + (y / 16) * 20) % MASTER_PALETTE.len();
-                let color = MASTER_PALETTE[color_index];
+    fn render_small_text(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8)) {
+        // Small text rendering at 6 pixels tall (6x5 pixels per character)
+        for (i, ch) in text.chars().enumerate() {
+            if ch.is_ascii() {
+                let char_index = (ch as u8).saturating_sub(32) as usize;
+                if char_index < FONT_8X8.len() {
+                    self.render_small_char(char_index, x + i * 5, y, color);
+                }
+            }
+        }
+    }
 
-                let buffer_index = (y * SCREEN_WIDTH + x) * 4;
-                self.screen_buffer[buffer_index] = color.0;
-                self.screen_buffer[buffer_index + 1] = color.1;
-                self.screen_buffer[buffer_index + 2] = color.2;
-                self.screen_buffer[buffer_index + 3] = 255;
+    fn render_small_char(&mut self, char_index: usize, x: usize, y: usize, color: (u8, u8, u8)) {
+        let font_data = FONT_8X8[char_index];
+
+        // Render at 6 pixels tall by scaling 8x8 to 6x5
+        for row in 0..6 {
+            // Map 6 rows to 8 rows of original font
+            let font_row = (row * 8) / 6;
+            let byte = font_data[font_row];
+            
+            for col in 0..5 {
+                // Map 5 columns to 8 columns of original font
+                let font_col = (col * 8) / 5;
+                if (byte >> font_col) & 1 != 0 {
+                    let pixel_x = x + col;
+                    let pixel_y = y + row;
+                    
+                    if pixel_x < SCREEN_WIDTH && pixel_y < SCREEN_HEIGHT {
+                        let pixel_index = (pixel_y * SCREEN_WIDTH + pixel_x) * 4;
+                        if pixel_index + 3 < self.screen_buffer.len() {
+                            self.screen_buffer[pixel_index] = color.0;
+                            self.screen_buffer[pixel_index + 1] = color.1;
+                            self.screen_buffer[pixel_index + 2] = color.2;
+                            self.screen_buffer[pixel_index + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_color_test(&mut self) {
+        // Render color test pattern organized by families, bigger squares, no titles
+        const SQUARE_SIZE: usize = 20; // Bigger squares to fill screen better
+        
+        // Clear screen with dark background
+        let bg_color = MASTER_PALETTE[0]; // Black
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;
+            self.screen_buffer[i + 1] = bg_color.1;
+            self.screen_buffer[i + 2] = bg_color.2;
+            self.screen_buffer[i + 3] = 255;
+        }
+
+        // Render organized color families without labels
+        let mut current_y = 5;
+
+        // Grays (0-15)
+        self.render_color_family_grid(0, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Reds (16-31) 
+        self.render_color_family_grid(16, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Oranges/Browns (32-47)
+        self.render_color_family_grid(32, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Greens (48-63)
+        self.render_color_family_grid(48, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Cyans (64-79)
+        self.render_color_family_grid(64, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Blues (80-95)
+        self.render_color_family_grid(80, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Purples (96-111)
+        self.render_color_family_grid(96, 16, 5, current_y, SQUARE_SIZE);
+        current_y += SQUARE_SIZE + 5;
+
+        // Extended colors (112-127)
+        self.render_color_family_grid(112, 16, 5, current_y, SQUARE_SIZE);
+    }
+
+    fn render_color_family_grid(&mut self, start_index: usize, count: usize, x: usize, y: usize, square_size: usize) {
+        // Render color squares without labels
+        for i in 0..count {
+            let color_index = start_index + i;
+            if color_index < MASTER_PALETTE.len() {
+                let square_x = x + i * square_size;
+                let square_y = y;
+
+                // Render color square
+                let color = MASTER_PALETTE[color_index];
+                for py in 0..square_size {
+                    for px in 0..square_size {
+                        let screen_x = square_x + px;
+                        let screen_y = square_y + py;
+                        
+                        if screen_x < SCREEN_WIDTH && screen_y < SCREEN_HEIGHT {
+                            let buffer_index = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                            if buffer_index + 3 < self.screen_buffer.len() {
+                                self.screen_buffer[buffer_index] = color.0;
+                                self.screen_buffer[buffer_index + 1] = color.1;
+                                self.screen_buffer[buffer_index + 2] = color.2;
+                                self.screen_buffer[buffer_index + 3] = 255;
+                            }
+                        }
+                    }
+                }
+
+                // Add color number
+                let bg_color = MASTER_PALETTE[color_index];
+                let brightness = (bg_color.0 as u32 + bg_color.1 as u32 + bg_color.2 as u32) / 3;
+                let text_color = if brightness > 128 { 
+                    MASTER_PALETTE[0] // Black for bright backgrounds
+                } else { 
+                    MASTER_PALETTE[15] // White for dark backgrounds
+                };
+                
+                self.render_small_text(&color_index.to_string(), square_x + 2, square_y + 2, text_color);
             }
         }
     }
@@ -998,11 +1137,53 @@ impl Ppu {
         let lives = self.hud_lives as u32;
         let start_x = 10; // 10 pixels from left edge
         let start_y = 10; // 10 pixels from top edge
-        let spacing = 20; // 20 pixels between each life icon
+        let spacing = 20; // 20 pixels between each heart (bigger hearts need more space)
 
         for i in 0..lives {
             let x = start_x + (i * spacing);
-            self.render_sprite(x as f32, start_y as f32, 5); // Sprite ID 5 is small Hambert head
+            self.render_pink_heart_text(x as f32, start_y as f32);
+        }
+    }
+
+    fn render_pink_heart_text(&mut self, x: f32, y: f32) {
+        // Render a big heart pattern in light red
+        let heart_color = MASTER_PALETTE[104]; // Color index 104 as requested
+        
+        // 16x16 heart pattern (double size)
+        let heart_pattern = [
+            0b0000000000000000, // ................
+            0b0000000000000000, // ................
+            0b0011110001111000, // ..####...####...
+            0b0111111011111100, // .######.######..
+            0b1111111111111110, // ##############..
+            0b1111111111111110, // ##############..
+            0b1111111111111110, // ##############..
+            0b1111111111111110, // ##############..
+            0b0111111111111100, // .############...
+            0b0011111111111000, // ..##########....
+            0b0001111111110000, // ...########.....
+            0b0000111111100000, // ....######......
+            0b0000011111000000, // .....####.......
+            0b0000001110000000, // ......##........
+            0b0000000100000000, // .......#........
+            0b0000000000000000, // ................
+        ];
+
+        for (row, &pattern) in heart_pattern.iter().enumerate() {
+            for col in 0..16 {
+                if (pattern & (1 << (15 - col))) != 0 {
+                    let screen_x = (x as usize + col).min(SCREEN_WIDTH - 1);
+                    let screen_y = (y as usize + row).min(SCREEN_HEIGHT - 1);
+                    let pixel_index = ((screen_y * SCREEN_WIDTH) + screen_x) * 4;
+                    
+                    if pixel_index + 3 < self.screen_buffer.len() {
+                        self.screen_buffer[pixel_index] = heart_color.0;
+                        self.screen_buffer[pixel_index + 1] = heart_color.1;
+                        self.screen_buffer[pixel_index + 2] = heart_color.2;
+                        self.screen_buffer[pixel_index + 3] = 255; // Alpha
+                    }
+                }
+            }
         }
     }
 
@@ -1160,7 +1341,7 @@ impl Ppu {
         let sprites = self.sprites.clone();
         for sprite in &sprites {
             if sprite.active {
-                self.render_sprite(sprite.x, sprite.y, sprite.sprite_id);
+                self.render_sprite(sprite.x, sprite.y, sprite.sprite_id, sprite.flip_horizontal);
             }
         }
 

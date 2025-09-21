@@ -189,8 +189,12 @@ impl ZebratronCartridgeSystem {
                                     .unwrap()
                                     .as_bool()
                                     .unwrap_or(false);
+                                let facing_left = js_sys::Reflect::get(&entity_data, &"facing_left".into())
+                                    .unwrap()
+                                    .as_bool()
+                                    .unwrap_or(false);
 
-                                self.ppu.add_sprite(x, y, sprite_id, active);
+                                self.ppu.add_sprite(x, y, sprite_id, active, facing_left);
                             }
                         }
 
@@ -239,7 +243,7 @@ impl ZebratronCartridgeSystem {
                                 if is_pressed { 11 } else { 10 }
                             };
                             
-                            self.ppu.add_sprite(x, y, sprite_id, true);
+                            self.ppu.add_sprite(x, y, sprite_id, true, false); // Piano keys don't flip
                         }
                     }
                 }
