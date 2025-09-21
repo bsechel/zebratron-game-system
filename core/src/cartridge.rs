@@ -25,6 +25,7 @@ pub enum EntityType {
     Player,
     Enemy,
     Hexagnome,
+    BloodGoblin,
     Platform,
     Projectile,
     Shuriken,
@@ -58,6 +59,7 @@ impl Entity {
             EntityType::Player => (32.0, 28.0),  // Hambert size (larger)
             EntityType::Enemy => (24.0, 24.0),
             EntityType::Hexagnome => (20.0, 28.0),   // Hexagnome dimensions (scaled for performance)
+            EntityType::BloodGoblin => (20.0, 38.0), // Blood goblin dimensions (20x38)
             EntityType::Platform => (64.0, 16.0),
             EntityType::Projectile => (8.0, 8.0),
             EntityType::Shuriken => (12.0, 12.0), // Spinning projectile
@@ -79,6 +81,7 @@ impl Entity {
                 EntityType::Player => 3,
                 EntityType::Enemy => 1,
                 EntityType::Hexagnome => 2,
+                EntityType::BloodGoblin => 1,
                 _ => 1,
             },
             animation_frame: 0,
@@ -229,6 +232,9 @@ impl HambertCartridge {
                 // Spawn hexagnomes
                 self.update_hexagnome_spawning();
 
+                // Check for blood goblin spawning at level end
+                self.check_blood_goblin_spawn();
+
                 // Add pending shuriken
                 self.entities.extend(self.pending_shuriken.drain(..));
 
@@ -285,7 +291,7 @@ impl HambertCartridge {
             }
 
             match entity.entity_type {
-                EntityType::Player | EntityType::Hexagnome => {
+                EntityType::Player | EntityType::Hexagnome | EntityType::BloodGoblin => {
                     // Handle death animation for player
                     if entity.is_dying {
                         entity.death_timer += 1.0;
@@ -308,6 +314,25 @@ impl HambertCartridge {
                         // No friction when dying (ragdoll effect)
                         entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
                     } else {
+                        // Special hopping behavior for BloodGoblin
+                        if entity.entity_type == EntityType::BloodGoblin {
+                            entity.animation_timer += 1.0;
+                            
+                            // Hop every 120 frames (2 seconds at 60fps) - slower hopping
+                            if entity.on_ground && entity.animation_timer >= 120.0 {
+                                entity.vel_y = -2.5; // Lower hop than before (was -4.5)
+                                entity.on_ground = false;
+                                entity.animation_timer = 0.0;
+                                
+                                // Add random horizontal movement (left to right)
+                                let hop_direction = if (entity.animation_frame % 4) < 2 { -0.8 } else { 0.8 };
+                                entity.vel_x = hop_direction;
+                                
+                                // Increment animation frame for next hop direction
+                                entity.animation_frame = (entity.animation_frame + 1) % 4;
+                            }
+                        }
+                        
                         // Normal physics
                         // Apply gravity
                         if !entity.on_ground {
@@ -323,7 +348,11 @@ impl HambertCartridge {
 
                         // Apply friction when on ground (increased for more control)
                         if entity.on_ground {
-                            entity.vel_x *= 0.75;  // More friction on ground
+                            if entity.entity_type == EntityType::BloodGoblin {
+                                entity.vel_x *= 0.85;  // Slightly less friction for blood goblin to allow sliding
+                            } else {
+                                entity.vel_x *= 0.75;  // More friction on ground for player/hexagnomes
+                            }
                         } else {
                             entity.vel_x *= 0.985;  // Reduced air resistance for better air control
                         }
@@ -365,7 +394,7 @@ impl HambertCartridge {
 
         // Ground collision - simple flat ground at Y=200
         for entity in &mut self.entities {
-            if matches!(entity.entity_type, EntityType::Player | EntityType::Hexagnome) {
+            if matches!(entity.entity_type, EntityType::Player | EntityType::Hexagnome | EntityType::BloodGoblin) {
                 // Let dying players fall through the floor
                 if entity.is_dying {
                     continue; // Skip ground collision for dying entities
@@ -620,6 +649,31 @@ impl HambertCartridge {
                         self.pending_shuriken.push(shuriken);
                         self.pending_sounds.push(SoundEffect::ShurikenThrow);
                     }
+                }
+            }
+        }
+    }
+
+    fn check_blood_goblin_spawn(&mut self) {
+        // Check if player is near the end of the level (world_width - 300)
+        if let Some((player_x, player_y)) = self.get_player_position() {
+            let level_end_trigger = self.world_width - 300.0; // Trigger 300 pixels before end
+            
+            // Only spawn if player has reached the end and no blood goblin exists yet
+            if player_x >= level_end_trigger {
+                let blood_goblin_exists = self.entities.iter().any(|e| e.entity_type == EntityType::BloodGoblin && e.active);
+                
+                if !blood_goblin_exists {
+                    // Spawn blood goblin at the end of the level, on the ground
+                    let blood_goblin_x = self.world_width - 100.0; // Near the very end
+                    let blood_goblin_y = 168.0 - 38.0; // Ground level - sprite height (38)
+                    let mut blood_goblin = Entity::new(EntityType::BloodGoblin, blood_goblin_x, blood_goblin_y, 7); // sprite ID 7
+                    
+                    // Set initial hopping state
+                    blood_goblin.vel_y = -3.0; // Start with an upward hop
+                    blood_goblin.animation_timer = 0.0;
+                    
+                    self.entities.push(blood_goblin);
                 }
             }
         }
