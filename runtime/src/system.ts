@@ -1,5 +1,6 @@
 import init, { ZebratronSystem as WasmSystem, ZebratronCartridgeSystem as WasmCartridgeSystem } from '../pkg/zebratron_core.js';
 import { AudioManager } from './audio';
+import { MidiManager } from './midi';
 
 export class ZebratronSystem {
   private wasmSystem: WasmSystem | null = null;
@@ -415,6 +416,7 @@ export class ZebratronCartridgeSystem {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
   private audioManager: AudioManager | null = null;
+  private midiManager: MidiManager | null = null;
   private isInitialized = false;
 
   async initialize(canvasElement?: HTMLCanvasElement): Promise<void> {
@@ -436,6 +438,30 @@ export class ZebratronCartridgeSystem {
 
     console.log('🔗 Connecting WASM cartridge system to audio...');
     this.audioManager.connectSystem(this.wasmSystem);
+
+    // Set up MIDI system
+    console.log('🎹 Initializing MIDI support...');
+    this.midiManager = new MidiManager();
+    try {
+      await this.midiManager.initialize();
+      console.log('✅ MIDI system initialized');
+      
+      // Connect MIDI to Z-Synth
+      this.midiManager.onNoteOn = (note: number, _velocity: number) => {
+        if (this.wasmSystem && this.wasmSystem.get_current_cartridge_type() === 2) {
+          this.wasmSystem.handle_midi_note_on(note);
+        }
+      };
+      
+      this.midiManager.onNoteOff = (note: number) => {
+        if (this.wasmSystem && this.wasmSystem.get_current_cartridge_type() === 2) {
+          this.wasmSystem.handle_midi_note_off(note);
+        }
+      };
+      
+    } catch (error) {
+      console.warn('⚠️ MIDI initialization failed (may not be supported):', error);
+    }
 
     // Load the Hambert cartridge and start
     this.wasmSystem.load_hambert_cartridge();
@@ -629,28 +655,36 @@ export class ZebratronCartridgeSystem {
     if (!this.wasmSystem) {
       return [];
     }
-    return this.wasmSystem.generate_debug_samples(count);
+    return Array.from(this.wasmSystem.generate_debug_samples(count));
   }
 
-  // Filter controls
+  // Filter controls (only work with Z-Synth cartridge - type 2)
   setFilterEnabled(enabled: boolean): void {
     if (!this.wasmSystem) return;
-    this.wasmSystem.set_filter_enabled(enabled);
+    if (this.wasmSystem.get_current_cartridge_type() === 2) {
+      this.wasmSystem.set_filter_enabled(enabled);
+    }
   }
 
   setFilterType(filterType: number): void {
     if (!this.wasmSystem) return;
-    this.wasmSystem.set_filter_type(filterType);
+    if (this.wasmSystem.get_current_cartridge_type() === 2) {
+      this.wasmSystem.set_filter_type(filterType);
+    }
   }
 
   setFilterCutoff(cutoff: number): void {
     if (!this.wasmSystem) return;
-    this.wasmSystem.set_filter_cutoff(cutoff);
+    if (this.wasmSystem.get_current_cartridge_type() === 2) {
+      this.wasmSystem.set_filter_cutoff(cutoff);
+    }
   }
 
   setFilterResonance(resonance: number): void {
     if (!this.wasmSystem) return;
-    this.wasmSystem.set_filter_resonance(resonance);
+    if (this.wasmSystem.get_current_cartridge_type() === 2) {
+      this.wasmSystem.set_filter_resonance(resonance);
+    }
   }
 
   // Delay controls
@@ -720,5 +754,125 @@ export class ZebratronCartridgeSystem {
   getZSynthInfo(): string {
     if (!this.wasmSystem) return 'System not initialized';
     return this.wasmSystem.get_zsynth_info();
+  }
+
+  // MIDI support methods
+  getMidiManager(): MidiManager | null {
+    return this.midiManager;
+  }
+
+  isMidiAvailable(): boolean {
+    return this.midiManager ? this.midiManager.isAvailable() : false;
+  }
+
+  getMidiInfo(): any {
+    return this.midiManager ? this.midiManager.getMidiInfo() : null;
+  }
+
+  // Manual MIDI control (for testing or other integrations)
+  handleMidiNoteOn(note: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.handle_midi_note_on(note);
+  }
+
+  handleMidiNoteOff(note: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.handle_midi_note_off(note);
+  }
+
+  // Emergency stop for MIDI
+  midiAllNotesOff(): void {
+    if (this.midiManager) {
+      this.midiManager.allNotesOff();
+    }
+  }
+
+  // SID-style 3-voice API for game developers
+  sid_voice1_play_note(note: number, waveform: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice1_play_note(note, waveform);
+  }
+
+  sid_voice2_play_note(note: number, waveform: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice2_play_note(note, waveform);
+  }
+
+  sid_voice3_play_note(note: number, waveform: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice3_play_note(note, waveform);
+  }
+
+  sid_voice1_stop(): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice1_stop();
+  }
+
+  sid_voice2_stop(): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice2_stop();
+  }
+
+  sid_voice3_stop(): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_voice3_stop();
+  }
+
+  sid_stop_all(): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_stop_all();
+  }
+
+  // SID filter controls (shared across all 3 voices)
+  sid_set_filter_voices(voice1: boolean, voice2: boolean, voice3: boolean): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_set_filter_voices(voice1, voice2, voice3);
+  }
+
+  sid_set_filter_cutoff(cutoff: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_set_filter_cutoff(cutoff);
+  }
+
+  sid_set_filter_resonance(resonance: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_set_filter_resonance(resonance);
+  }
+
+  sid_set_filter_type(filterType: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.sid_set_filter_type(filterType);
+  }
+
+  // Volume control for mixing SID and polyphonic layers
+  set_sid_volume(volume: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.set_sid_volume(volume);
+  }
+
+  set_poly_volume(volume: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.set_poly_volume(volume);
+  }
+
+  // Polyphonic layer API (enhanced Z-Synth access)
+  poly_play_chord(notes: number[]): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.poly_play_chord(new Uint8Array(notes));
+  }
+
+  poly_play_note(note: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.poly_play_note(note);
+  }
+
+  poly_stop_note(note: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.poly_stop_note(note);
+  }
+
+  poly_stop_all(): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.poly_stop_all();
   }
 }

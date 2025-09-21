@@ -89,3 +89,6 @@ cd core && wasm-pack build --target web --out-dir ../runtime/pkg
 - `/tools/` - Asset pipeline and development tools
 - `/examples/` - Sample games and demos
 - `/docs/` - Documentation and tutorials
+
+## Documentation
+- [Developer Guide](./DEVELOPER_GUIDE.md) - Detailed system architecture and component documentation

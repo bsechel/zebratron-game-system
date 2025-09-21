@@ -292,6 +292,10 @@ pub struct Ppu {
     
     // HUD/UI data
     hud_lives: u8,
+    player_dying: bool,
+    player_death_flash: bool,
+    player_invulnerable: bool,
+    player_invul_flash: bool,
 }
 
 impl Ppu {
@@ -314,6 +318,10 @@ impl Ppu {
             intro_text: String::new(),
             zsynth_mode: false,
             hud_lives: 3,
+            player_dying: false,
+            player_death_flash: false,
+            player_invulnerable: false,
+            player_invul_flash: false,
         }
     }
 
@@ -387,6 +395,16 @@ impl Ppu {
 
     pub fn set_lives(&mut self, lives: u32) {
         self.hud_lives = lives as u8;
+    }
+
+    pub fn set_player_death_state(&mut self, is_dying: bool, should_flash: bool) {
+        self.player_dying = is_dying;
+        self.player_death_flash = should_flash;
+    }
+
+    pub fn set_player_invulnerability_state(&mut self, is_invulnerable: bool, should_flash: bool) {
+        self.player_invulnerable = is_invulnerable;
+        self.player_invul_flash = should_flash;
     }
 
     // Rendering
@@ -631,6 +649,7 @@ impl Ppu {
             0 => (32, 28),  // Hambert (larger)
             1 => (32, 16),  // Platform
             2 => (24, 24),  // Enemy
+            6 => (16, 16),  // Hamberry
             3 => (20, 32),  // Ninja
             4 => (12, 12),  // Shuriken
             5 => (12, 12),  // Small Hambert head (for lives counter)
@@ -651,7 +670,28 @@ impl Ppu {
 
                     let color_index = self.get_sprite_pixel(sprite_id, px, py);
                     if color_index > 0 {
-                        let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+                        let mut color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+                        
+                        // Apply death flash effect for player sprite (sprite_id 0)
+                        if sprite_id == 0 && self.player_dying {
+                            if self.player_death_flash {
+                                // Flash white
+                                color = (255, 255, 255);
+                            } else {
+                                // Flash red
+                                color = (255, 100, 100);
+                            }
+                        }
+                        // Apply invulnerability flash effect for player sprite (sprite_id 0)
+                        else if sprite_id == 0 && self.player_invulnerable {
+                            if self.player_invul_flash {
+                                // Make semi-transparent (skip rendering this pixel)
+                                continue;
+                            } else {
+                                // Normal rendering
+                            }
+                        }
+                        
                         let buffer_index = (screen_y as usize * SCREEN_WIDTH + screen_x as usize) * 4;
 
                         if buffer_index + 3 < self.screen_buffer.len() {
@@ -674,6 +714,7 @@ impl Ppu {
             3 => self.get_ninja_pixel(x, y),        // Ninja
             4 => self.get_shuriken_pixel(x, y),     // Shuriken
             5 => self.get_small_hambert_head_pixel(x, y), // Small Hambert head
+            6 => self.get_hamberry_pixel(x, y),     // Hamberry collectible
             10 => self.get_white_piano_key_pixel(x, y, false), // White key unpressed
             11 => self.get_white_piano_key_pixel(x, y, true),  // White key pressed
             12 => self.get_black_piano_key_pixel(x, y, false), // Black key unpressed
@@ -1004,6 +1045,35 @@ impl Ppu {
             [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,18,0,0,0],
             [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,0,0,0],
             [0,0,0,0,0,0,0,18,18,18,18,18,18,18,18,18,18,18,18,18,0,18,18,18,18,18,18,0,0,0],
+        ];
+
+        // Return the pixel value directly (already mapped to correct palette indices)
+        pixel_data[y as usize][x as usize]
+    }
+
+    fn get_hamberry_pixel(&self, x: u32, y: u32) -> u8 {
+        // 16x16 hamberry sprite data
+        if x >= 16 || y >= 16 {
+            return 0; // Transparent outside bounds
+        }
+
+        let pixel_data = [
+            [0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0],
+            [0,0,1,1,1,61,1,1,0,1,61,61,1,0,0,0],
+            [0,0,1,62,63,4,62,4,60,62,4,63,1,1,0,0],
+            [0,0,0,3,63,63,60,0,0,60,63,63,1,0,0,0],
+            [0,0,0,0,2,61,3,1,1,3,60,1,1,0,0,0],
+            [0,0,0,0,16,16,1,21,21,1,16,16,0,0,0,0],
+            [0,0,0,16,16,1,1,17,17,1,2,16,0,0,0,0],
+            [0,0,0,16,0,28,17,0,0,18,28,0,16,16,0,0],
+            [0,0,16,16,16,21,22,2,16,22,21,16,28,16,0,0],
+            [0,0,16,17,2,21,21,0,0,21,21,1,17,16,0,0],
+            [0,0,16,2,1,1,1,28,28,1,1,1,16,16,0,0],
+            [0,0,16,16,18,1,28,22,22,16,1,18,16,0,0,0],
+            [0,0,0,16,16,18,1,17,17,1,18,16,16,0,0,0],
+            [0,0,0,0,16,16,0,2,2,0,16,16,0,0,0,0],
+            [0,0,0,0,0,16,16,16,21,16,16,0,0,0,0,0],
+            [0,0,0,0,0,0,0,16,16,16,0,0,0,0,0,0],
         ];
 
         // Return the pixel value directly (already mapped to correct palette indices)

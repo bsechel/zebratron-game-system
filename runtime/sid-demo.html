@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SID-Style 3-Voice Synthesizer - ZebratronGameSystem</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #4a4acd;
+            color: #9090ff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #191970;
+            border: 3px solid #9090ff;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #ffffff;
+            text-align: center;
+            text-shadow: 2px 2px 0px #000040;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        
+        .status {
+            background: #000040;
+            padding: 10px;
+            border: 2px solid #9090ff;
+            margin-bottom: 20px;
+            color: #ffffff;
+            text-align: center;
+        }
+        
+        .voice-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .voice {
+            background: #000040;
+            border: 2px solid #9090ff;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .voice h3 {
+            color: #ffffff;
+            margin-top: 0;
+            text-align: center;
+            background: #9090ff;
+            color: #000040;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        
+        .voice-control {
+            margin-bottom: 10px;
+        }
+        
+        .voice-control label {
+            display: block;
+            color: #9090ff;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .voice-control select,
+        .voice-control input[type="range"] {
+            width: 100%;
+            background: #4a4acd;
+            color: #ffffff;
+            border: 1px solid #9090ff;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        .note-buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+        
+        .note-btn {
+            background: #4a4acd;
+            color: #ffffff;
+            border: 2px solid #9090ff;
+            border-radius: 4px;
+            padding: 8px 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.1s;
+        }
+        
+        .note-btn:hover {
+            background: #6a6aed;
+        }
+        
+        .note-btn.active {
+            background: #ffffff;
+            color: #000040;
+            border-color: #ffffff;
+        }
+        
+        .filter-controls {
+            background: #000040;
+            border: 2px solid #9090ff;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-controls h3 {
+            color: #ffffff;
+            margin-top: 0;
+            text-align: center;
+            background: #9090ff;
+            color: #000040;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .filter-control {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .filter-control label {
+            color: #9090ff;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .filter-control input[type="range"] {
+            background: #4a4acd;
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .filter-control input[type="range"]::-webkit-slider-thumb {
+            width: 16px;
+            height: 16px;
+            background: #ffffff;
+            border-radius: 50%;
+            cursor: pointer;
+            -webkit-appearance: none;
+            box-shadow: 0 0 4px #9090ff;
+        }
+        
+        .filter-control select {
+            background: #4a4acd;
+            color: #ffffff;
+            border: 1px solid #9090ff;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        .voice-enable {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .voice-enable input[type="checkbox"] {
+            accent-color: #9090ff;
+        }
+        
+        .control-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .control-btn {
+            background: #4a4acd;
+            color: #ffffff;
+            border: 2px solid #9090ff;
+            border-radius: 6px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 16px;
+            transition: all 0.1s;
+        }
+        
+        .control-btn:hover {
+            background: #6a6aed;
+            border-color: #ffffff;
+        }
+        
+        .demo-patterns {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .demo-btn {
+            background: #000040;
+            color: #9090ff;
+            border: 2px solid #9090ff;
+            border-radius: 4px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.1s;
+        }
+        
+        .demo-btn:hover {
+            background: #4a4acd;
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎛️ SID-STYLE SYNTHESIZER</h1>
+        <div class="status" id="status">Click "Initialize System" to begin</div>
+        
+        <div class="voice-controls">
+            <!-- Voice 1 -->
+            <div class="voice">
+                <h3>VOICE 1</h3>
+                <div class="voice-control">
+                    <label>Waveform:</label>
+                    <select id="voice1-waveform">
+                        <option value="0">Pulse</option>
+                        <option value="1">Sawtooth</option>
+                        <option value="2">Triangle</option>
+                        <option value="3">Sine</option>
+                        <option value="4">Noise</option>
+                    </select>
+                </div>
+                <div class="note-buttons">
+                    <button class="note-btn" data-voice="1" data-note="36">C2</button>
+                    <button class="note-btn" data-voice="1" data-note="37">C#2</button>
+                    <button class="note-btn" data-voice="1" data-note="38">D2</button>
+                    <button class="note-btn" data-voice="1" data-note="39">D#2</button>
+                    <button class="note-btn" data-voice="1" data-note="40">E2</button>
+                    <button class="note-btn" data-voice="1" data-note="41">F2</button>
+                    <button class="note-btn" data-voice="1" data-note="42">F#2</button>
+                    <button class="note-btn" data-voice="1" data-note="43">G2</button>
+                    <button class="note-btn" data-voice="1" data-note="44">G#2</button>
+                    <button class="note-btn" data-voice="1" data-note="45">A2</button>
+                    <button class="note-btn" data-voice="1" data-note="46">A#2</button>
+                    <button class="note-btn" data-voice="1" data-note="47">B2</button>
+                </div>
+            </div>
+            
+            <!-- Voice 2 -->
+            <div class="voice">
+                <h3>VOICE 2</h3>
+                <div class="voice-control">
+                    <label>Waveform:</label>
+                    <select id="voice2-waveform">
+                        <option value="0">Pulse</option>
+                        <option value="1" selected>Sawtooth</option>
+                        <option value="2">Triangle</option>
+                        <option value="3">Sine</option>
+                        <option value="4">Noise</option>
+                    </select>
+                </div>
+                <div class="note-buttons">
+                    <button class="note-btn" data-voice="2" data-note="60">C4</button>
+                    <button class="note-btn" data-voice="2" data-note="61">C#4</button>
+                    <button class="note-btn" data-voice="2" data-note="62">D4</button>
+                    <button class="note-btn" data-voice="2" data-note="63">D#4</button>
+                    <button class="note-btn" data-voice="2" data-note="64">E4</button>
+                    <button class="note-btn" data-voice="2" data-note="65">F4</button>
+                    <button class="note-btn" data-voice="2" data-note="66">F#4</button>
+                    <button class="note-btn" data-voice="2" data-note="67">G4</button>
+                    <button class="note-btn" data-voice="2" data-note="68">G#4</button>
+                    <button class="note-btn" data-voice="2" data-note="69">A4</button>
+                    <button class="note-btn" data-voice="2" data-note="70">A#4</button>
+                    <button class="note-btn" data-voice="2" data-note="71">B4</button>
+                </div>
+            </div>
+            
+            <!-- Voice 3 -->
+            <div class="voice">
+                <h3>VOICE 3</h3>
+                <div class="voice-control">
+                    <label>Waveform:</label>
+                    <select id="voice3-waveform">
+                        <option value="0">Pulse</option>
+                        <option value="1">Sawtooth</option>
+                        <option value="2" selected>Triangle</option>
+                        <option value="3">Sine</option>
+                        <option value="4">Noise</option>
+                    </select>
+                </div>
+                <div class="note-buttons">
+                    <button class="note-btn" data-voice="3" data-note="72">C5</button>
+                    <button class="note-btn" data-voice="3" data-note="73">C#5</button>
+                    <button class="note-btn" data-voice="3" data-note="74">D5</button>
+                    <button class="note-btn" data-voice="3" data-note="75">D#5</button>
+                    <button class="note-btn" data-voice="3" data-note="76">E5</button>
+                    <button class="note-btn" data-voice="3" data-note="77">F5</button>
+                    <button class="note-btn" data-voice="3" data-note="78">F#5</button>
+                    <button class="note-btn" data-voice="3" data-note="79">G5</button>
+                    <button class="note-btn" data-voice="3" data-note="80">G#5</button>
+                    <button class="note-btn" data-voice="3" data-note="81">A5</button>
+                    <button class="note-btn" data-voice="3" data-note="82">A#5</button>
+                    <button class="note-btn" data-voice="3" data-note="83">B5</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="filter-controls">
+            <h3>🔊 SID FILTER (SHARED)</h3>
+            <div class="filter-row">
+                <div class="voice-enable">
+                    <input type="checkbox" id="filter-voice1" checked> 
+                    <label for="filter-voice1">Voice 1</label>
+                </div>
+                <div class="voice-enable">
+                    <input type="checkbox" id="filter-voice2" checked> 
+                    <label for="filter-voice2">Voice 2</label>
+                </div>
+                <div class="voice-enable">
+                    <input type="checkbox" id="filter-voice3"> 
+                    <label for="filter-voice3">Voice 3</label>
+                </div>
+            </div>
+            <div class="filter-row">
+                <div class="filter-control">
+                    <label>Type:</label>
+                    <select id="filter-type">
+                        <option value="0">Low Pass</option>
+                        <option value="1">High Pass</option>
+                        <option value="2">Band Pass</option>
+                    </select>
+                </div>
+                <div class="filter-control">
+                    <label>Cutoff: <span id="cutoff-value">1000</span> Hz</label>
+                    <input type="range" id="filter-cutoff" min="100" max="4000" value="1000" step="50">
+                </div>
+                <div class="filter-control">
+                    <label>Resonance: <span id="resonance-value">1.0</span></label>
+                    <input type="range" id="filter-resonance" min="0.1" max="8.0" value="1.0" step="0.1">
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-buttons">
+            <button class="control-btn" id="init-btn">🚀 Initialize System</button>
+            <button class="control-btn" id="stop-all-btn">⏹️ Stop All</button>
+        </div>
+        
+        <div class="demo-patterns">
+            <button class="demo-btn" id="demo-bass">Bass Line</button>
+            <button class="demo-btn" id="demo-chord">Chord</button>
+            <button class="demo-btn" id="demo-arpeggio">Arpeggio</button>
+            <button class="demo-btn" id="demo-melody">Melody</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { ZebratronCartridgeSystem } from './src/index.ts';
+
+        class SIDDemo {
+            constructor() {
+                this.system = null;
+                this.isInitialized = false;
+                this.activeNotes = {1: null, 2: null, 3: null};
+                
+                this.setupUI();
+                this.initializeSystem();
+            }
+
+            async initializeSystem() {
+                try {
+                    console.log('🚀 Creating ZebratronCartridgeSystem...');
+                    this.system = new ZebratronCartridgeSystem();
+                    
+                    console.log('🚀 Initializing system...');
+                    await this.system.initialize();
+                    console.log('✅ System initialized successfully!');
+                    this.updateStatus('SID System ready - Play some notes!');
+                    this.isInitialized = true;
+                } catch (error) {
+                    console.error('❌ Failed to initialize system:', error);
+                    this.updateStatus('Failed to initialize system');
+                }
+            }
+
+            setupUI() {
+                // Initialize system button
+                document.getElementById('init-btn').addEventListener('click', async () => {
+                    if (!this.isInitialized) {
+                        await this.initializeSystem();
+                        if (this.system) {
+                            await this.system.start();
+                            this.updateStatus('SID System started - Ready for C64-style music!');
+                        }
+                    }
+                });
+
+                // Stop all button
+                document.getElementById('stop-all-btn').addEventListener('click', () => {
+                    this.stopAllVoices();
+                });
+
+                // Note buttons
+                document.querySelectorAll('.note-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const voice = parseInt(e.target.dataset.voice);
+                        const note = parseInt(e.target.dataset.note);
+                        this.toggleNote(voice, note, e.target);
+                    });
+                });
+
+                // Waveform selectors
+                document.getElementById('voice1-waveform').addEventListener('change', (e) => {
+                    this.updateVoiceWaveform(1, parseInt(e.target.value));
+                });
+                document.getElementById('voice2-waveform').addEventListener('change', (e) => {
+                    this.updateVoiceWaveform(2, parseInt(e.target.value));
+                });
+                document.getElementById('voice3-waveform').addEventListener('change', (e) => {
+                    this.updateVoiceWaveform(3, parseInt(e.target.value));
+                });
+
+                // Filter controls
+                document.getElementById('filter-voice1').addEventListener('change', this.updateFilterVoices.bind(this));
+                document.getElementById('filter-voice2').addEventListener('change', this.updateFilterVoices.bind(this));
+                document.getElementById('filter-voice3').addEventListener('change', this.updateFilterVoices.bind(this));
+                
+                document.getElementById('filter-type').addEventListener('change', (e) => {
+                    if (this.system) {
+                        this.system.sid_set_filter_type(parseInt(e.target.value));
+                        console.log(`🎛️ Filter type: ${['Low Pass', 'High Pass', 'Band Pass'][parseInt(e.target.value)]}`);
+                    }
+                });
+
+                document.getElementById('filter-cutoff').addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    document.getElementById('cutoff-value').textContent = value;
+                    if (this.system) {
+                        this.system.sid_set_filter_cutoff(value);
+                        console.log(`🎛️ Filter cutoff: ${value} Hz`);
+                    }
+                });
+
+                document.getElementById('filter-resonance').addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    document.getElementById('resonance-value').textContent = value;
+                    if (this.system) {
+                        this.system.sid_set_filter_resonance(value);
+                        console.log(`🎛️ Filter resonance: ${value}`);
+                    }
+                });
+
+                // Demo patterns
+                document.getElementById('demo-bass').addEventListener('click', () => this.playDemoPattern('bass'));
+                document.getElementById('demo-chord').addEventListener('click', () => this.playDemoPattern('chord'));
+                document.getElementById('demo-arpeggio').addEventListener('click', () => this.playDemoPattern('arpeggio'));
+                document.getElementById('demo-melody').addEventListener('click', () => this.playDemoPattern('melody'));
+            }
+
+            toggleNote(voice, note, button) {
+                if (!this.system) return;
+
+                if (this.activeNotes[voice] === note) {
+                    // Stop the note
+                    this.stopVoice(voice);
+                    button.classList.remove('active');
+                    this.activeNotes[voice] = null;
+                } else {
+                    // Start new note
+                    const waveform = this.getVoiceWaveform(voice);
+                    this.playVoiceNote(voice, note, waveform);
+                    
+                    // Update UI
+                    this.clearVoiceButtons(voice);
+                    button.classList.add('active');
+                    this.activeNotes[voice] = note;
+                }
+            }
+
+            playVoiceNote(voice, note, waveform) {
+                if (!this.system) return;
+                
+                switch(voice) {
+                    case 1:
+                        this.system.sid_voice1_play_note(note, waveform);
+                        break;
+                    case 2:
+                        this.system.sid_voice2_play_note(note, waveform);
+                        break;
+                    case 3:
+                        this.system.sid_voice3_play_note(note, waveform);
+                        break;
+                }
+                console.log(`🎵 Voice ${voice}: Note ${note}, Waveform ${waveform}`);
+            }
+
+            stopVoice(voice) {
+                if (!this.system) return;
+                
+                switch(voice) {
+                    case 1:
+                        this.system.sid_voice1_stop();
+                        break;
+                    case 2:
+                        this.system.sid_voice2_stop();
+                        break;
+                    case 3:
+                        this.system.sid_voice3_stop();
+                        break;
+                }
+            }
+
+            stopAllVoices() {
+                if (!this.system) return;
+                
+                this.system.sid_stop_all();
+                document.querySelectorAll('.note-btn.active').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                this.activeNotes = {1: null, 2: null, 3: null};
+                console.log('🔇 All voices stopped');
+            }
+
+            clearVoiceButtons(voice) {
+                document.querySelectorAll(`[data-voice="${voice}"]`).forEach(btn => {
+                    btn.classList.remove('active');
+                });
+            }
+
+            getVoiceWaveform(voice) {
+                return parseInt(document.getElementById(`voice${voice}-waveform`).value);
+            }
+
+            updateVoiceWaveform(voice, waveform) {
+                // If voice is currently playing, update its waveform
+                if (this.activeNotes[voice] !== null) {
+                    this.playVoiceNote(voice, this.activeNotes[voice], waveform);
+                }
+            }
+
+            updateFilterVoices() {
+                if (!this.system) return;
+                
+                const voice1 = document.getElementById('filter-voice1').checked;
+                const voice2 = document.getElementById('filter-voice2').checked;
+                const voice3 = document.getElementById('filter-voice3').checked;
+                
+                this.system.sid_set_filter_voices(voice1, voice2, voice3);
+                console.log(`🎛️ Filter voices: V1=${voice1}, V2=${voice2}, V3=${voice3}`);
+            }
+
+            playDemoPattern(pattern) {
+                this.stopAllVoices();
+                
+                switch(pattern) {
+                    case 'bass':
+                        // Classic C64 bass line
+                        this.playVoiceNote(1, 36, 0); // C2, pulse
+                        setTimeout(() => this.playVoiceNote(1, 43, 0), 500); // G2
+                        setTimeout(() => this.playVoiceNote(1, 41, 0), 1000); // F2
+                        setTimeout(() => this.playVoiceNote(1, 38, 0), 1500); // D2
+                        break;
+                        
+                    case 'chord':
+                        // C major chord across voices
+                        this.playVoiceNote(1, 48, 0); // C3, pulse
+                        this.playVoiceNote(2, 52, 1); // E3, saw
+                        this.playVoiceNote(3, 55, 2); // G3, triangle
+                        break;
+                        
+                    case 'arpeggio':
+                        // Rapid arpeggio on voice 3
+                        const arpNotes = [60, 64, 67, 72]; // C4, E4, G4, C5
+                        arpNotes.forEach((note, i) => {
+                            setTimeout(() => this.playVoiceNote(3, note, 2), i * 200);
+                        });
+                        break;
+                        
+                    case 'melody':
+                        // Simple melody on voice 2
+                        const melody = [60, 62, 64, 65, 67, 69, 71, 72]; // C major scale
+                        melody.forEach((note, i) => {
+                            setTimeout(() => this.playVoiceNote(2, note, 1), i * 300);
+                        });
+                        break;
+                }
+                
+                console.log(`🎼 Playing demo pattern: ${pattern}`);
+            }
+
+            updateStatus(message) {
+                const statusElement = document.getElementById('status');
+                if (statusElement) {
+                    statusElement.textContent = message;
+                }
+            }
+        }
+
+        // Initialize the demo when the page loads
+        const demo = new SIDDemo();
+        console.log('🎛️ SID Demo initialized!');
+    </script>
+</body>
+</html>

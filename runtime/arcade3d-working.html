@@ -577,6 +577,18 @@
             getCurrentCartridgeType() {
                 return this.wasmSystem ? this.wasmSystem.get_current_cartridge_type() : 0;
             }
+
+            // MIDI support methods (placeholder implementations)
+            isMidiAvailable() {
+                return false; // For now, disable MIDI in the 3D arcade demo
+            }
+
+            getMidiInfo() {
+                return {
+                    inputs: [],
+                    outputs: []
+                };
+            }
         }
 
         // Expose ZGS to global scope and initialize immediately
@@ -768,6 +780,15 @@
 
             // Update ZGS if running
             if (isRunning && zgsSystem) {
+                // Update status with live MIDI/Z-Synth information (occasionally)
+                if (currentCartridge === 'zsynth' && Math.random() < 0.01) { // Update ~1% of frames
+                    try {
+                        const synthInfo = zgsSystem.getZSynthInfo();
+                        updateStatus(synthInfo);
+                    } catch (error) {
+                        // Ignore status update errors during animation
+                    }
+                }
                 try {
                     // Send current input state to game
                     if (currentCartridge === 'hambert') {
@@ -900,7 +921,14 @@
                 const success = zgsSystem.loadZSynthCartridge();
                 if (success) {
                     currentCartridge = 'zsynth';
-                    updateStatus('Z-Synth loaded - Press Start to play!');
+                    let statusText = 'Z-Synth loaded - Press Start to play!';
+                    if (zgsSystem.isMidiAvailable()) {
+                        const midiInfo = zgsSystem.getMidiInfo();
+                        statusText += ` | MIDI ready: ${midiInfo.inputs.length} inputs detected`;
+                    } else {
+                        statusText += ' | MIDI not available';
+                    }
+                    updateStatus(statusText);
                 } else {
                     updateStatus('Failed to load Z-Synth cartridge');
                 }
@@ -916,7 +944,12 @@
                 updateStatus('Starting game...');
                 await zgsSystem.start();
                 isRunning = true;
-                updateStatus(`Playing ${currentCartridge || 'game'} on 3D arcade!`);
+                let statusText = `Playing ${currentCartridge || 'game'} on 3D arcade!`;
+                if (currentCartridge === 'zsynth' && zgsSystem.isMidiAvailable()) {
+                    const midiInfo = zgsSystem.getMidiInfo();
+                    statusText += ` | MIDI: ${midiInfo.inputs.length} inputs`;
+                }
+                updateStatus(statusText);
             } catch (error) {
                 console.error('❌ Failed to start game:', error);
                 updateStatus('Failed to start game');

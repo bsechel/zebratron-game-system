@@ -833,6 +833,11 @@ impl Apu {
 
     // Sound effect methods
     pub fn play_sound_effect(&mut self, start_note: u8, end_note: u8, waveform: u8, duration: f32) {
+        // Don't interrupt an already playing sound effect
+        if self.sfx_active {
+            return;
+        }
+        
         self.sfx_active = true;
         self.sfx_timer = 0.0;
         self.sfx_duration = duration;

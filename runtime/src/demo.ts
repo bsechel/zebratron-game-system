@@ -274,14 +274,15 @@ class Demo {
       console.log('🎵 Audio system status:', this.system.isAudioAvailable());
       console.log('🎛️ Audio info:', this.system.getAudioInfo());
 
-      // Try entering sound test immediately for testing
-      console.log('🧪 Testing sound generation...');
-      this.system.enterSoundTestMode();
+      // Ensure sound test mode is off for normal game operation
+      console.log('🧪 Ensuring normal game audio mode...');
+      this.system.exitSoundTestMode();
+      this.system.setMelodyEnabled(false); // Disable background melody
 
       setTimeout(() => {
         console.log('🎼 Sound test active:', this.system.isSoundTestMode());
-        console.log('🎵 Current waveform:', this.system.getCurrentWaveform());
-        console.log('🎵 Current note:', this.system.getCurrentNote());
+        console.log('🎵 Melody enabled:', this.system.getMelodyEnabled());
+        console.log('🎵 System ready for game sounds');
       }, 100);
 
     } catch (error) {

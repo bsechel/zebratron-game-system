@@ -17,6 +17,7 @@ pub struct ZebratronCartridgeSystem {
     current_cartridge_type: u8, // 0=none, 1=hambert, 2=zsynth
     running: bool,
     frame_ready: bool,
+    last_game_state: u32, // Track game state changes for audio management
 }
 
 #[wasm_bindgen]
@@ -35,6 +36,7 @@ impl ZebratronCartridgeSystem {
             current_cartridge_type: 0,
             running: false,
             frame_ready: false,
+            last_game_state: 0, // Start with intro state
         }
     }
 
@@ -191,6 +193,11 @@ impl ZebratronCartridgeSystem {
                                 self.ppu.add_sprite(x, y, sprite_id, active);
                             }
                         }
+
+                        // Sync player states for visual effects
+                        self.ppu.set_lives(cartridge.get_lives());
+                        self.ppu.set_player_death_state(cartridge.is_player_dying(), cartridge.get_player_death_flash());
+                        self.ppu.set_player_invulnerability_state(cartridge.is_player_invulnerable(), cartridge.get_player_invul_flash());
                     }
                 }
             }
@@ -244,6 +251,20 @@ impl ZebratronCartridgeSystem {
     }
 
     fn process_cartridge_audio(&mut self) {
+        // Check for game state changes and stop audio if transitioning to intro
+        if self.current_cartridge_type == 1 {
+            if let Some(ref cartridge) = self.hambert_cartridge {
+                let current_state = cartridge.get_game_state();
+                
+                // If we transition to intro (state 0), stop all audio
+                if current_state == 0 && self.last_game_state != 0 {
+                    self.stop_all_audio();
+                }
+                
+                self.last_game_state = current_state;
+            }
+        }
+        
         match self.current_cartridge_type {
             1 => {
                 // Hambert cartridge - process sound effects
@@ -295,6 +316,7 @@ impl ZebratronCartridgeSystem {
             2 => self.play_collect_sound(),   // Collect
             3 => self.play_enemy_hit_sound(), // Enemy hit
             4 => self.play_shuriken_sound(),  // Shuriken throw
+            5 => self.play_death_sound(),     // Death
             _ => {}, // Unknown sound
         }
     }
@@ -310,30 +332,42 @@ impl ZebratronCartridgeSystem {
     }
 
     fn play_collect_sound(&mut self) {
-        // Pleasant pickup sound
-        self.apu.sound_test_change_waveform(3); // Sine wave
-        self.apu.sound_test_change_note(72);    // C5
+        // Pleasant pickup sound - use timed sound effect
+        self.apu.play_sound_effect(72, 84, 3, 0.2); // C5 to C6, sine wave, 200ms
     }
 
     fn play_enemy_hit_sound(&mut self) {
-        // Sharp hit sound
-        self.apu.sound_test_change_waveform(4); // Noise
-        self.apu.sound_test_change_note(60);    // C4
+        // Sharp hit sound - brief noise burst
+        self.apu.play_sound_effect(60, 48, 4, 0.1); // C4 to C3, noise, 100ms
     }
 
     fn play_shuriken_sound(&mut self) {
-        // Whoosh sound for projectile
-        self.apu.sound_test_change_waveform(2); // Triangle wave
-        self.apu.sound_test_change_note(55);    // G3
+        // Whoosh sound for projectile - brief triangle wave
+        self.apu.play_sound_effect(55, 48, 2, 0.15); // G3 to C3, triangle, 150ms
+    }
+
+    fn play_death_sound(&mut self) {
+        // Dramatic descending death sound - classic "bonk" effect
+        // Start high and sweep down over 1 second for dramatic effect
+        self.apu.play_sound_effect(84, 36, 1, 1.0); // C6 down to C2, sawtooth, 1 second
     }
 
     pub fn render(&mut self) {
         // Update PPU with current game state
         if let Some(cartridge) = &self.hambert_cartridge {
             self.ppu.set_lives(cartridge.get_lives());
+            self.ppu.set_player_death_state(
+                cartridge.is_player_dying(),
+                cartridge.get_player_death_flash()
+            );
         }
         
         self.ppu.render();
+    }
+
+    pub fn stop_all_audio(&mut self) {
+        // Stop all audio when transitioning between game states
+        self.apu.exit_sound_test_mode();
     }
 
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {

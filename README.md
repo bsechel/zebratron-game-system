@@ -11,7 +11,7 @@
   <img src="zebratron-game-system.png" alt="ZebratronGameSystem Logo" width="400">
 </div>
 
-A modern 8-bit game system inspired by the NES and Sega Master System, designed to run at 60fps in web browsers using WebAssembly. Built with a focus on making scrolling games and classic arcade-style games easy to develop, with the long-term vision of becoming actual retro gaming hardware.
+A modern 8-bit game system inspired by classic retro consoles, designed to run at 60fps in web browsers using WebAssembly. Built with a focus on making scrolling games and classic arcade-style games easy to develop, with the long-term vision of becoming actual retro gaming hardware.
 
 **A project by Niebo Microsystems**
 
@@ -177,7 +177,7 @@ Browser (JavaScript/TypeScript)
 ├── Audio Context (Future)
 └── WebAssembly Interface
     └── Rust Core
-        ├── CPU Emulator (6502-style)
+        ├── CPU Emulator (8-bit style)
         ├── PPU Graphics
         ├── APU Audio
         └── Memory Management
@@ -388,7 +388,7 @@ npm run lint
 ```
 ├── core/           # Rust WebAssembly engine
 │   ├── src/
-│   │   ├── cpu.rs     # 6502-style CPU emulation
+│   │   ├── cpu.rs     # 8-bit style CPU emulation
 │   │   ├── ppu.rs     # Picture Processing Unit
 │   │   ├── apu.rs     # Audio Processing Unit
 │   │   ├── memory.rs  # Memory management
@@ -484,8 +484,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Inspiration and References
 
 **Hardware Architecture Inspired By:**
-- [Nintendo Entertainment System (NES)](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System) - CPU/PPU/APU separation model
-- [Sega Master System](https://en.wikipedia.org/wiki/Master_System) - 8-bit gaming architecture
+- Classic 8-bit game consoles - CPU/PPU/APU separation model and 8-bit gaming architecture
 - [PICO-8 Fantasy Console](https://www.lexaloffle.com/pico-8.php) - Color palette limitations and pixel art constraints
 - [TIC-80 Fantasy Console](https://tic80.com/) - Modern retro development workflow
 
@@ -499,7 +498,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Rust WebAssembly Book](https://rustwasm.github.io/docs/book/) - WASM integration patterns
 - [wasm-pack Guide](https://rustwasm.github.io/wasm-pack/) - Build toolchain setup
 - [6502 CPU Reference](http://6502.org/) - CPU architecture inspiration
-- [NESDev Wiki](https://wiki.nesdev.com/) - PPU and memory mapping concepts
+- Classic console development documentation - PPU and memory mapping concepts
 
 **Development Philosophy:**
 - **Fantasy Consoles Movement** - Making game development accessible and fun

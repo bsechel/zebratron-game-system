@@ -9,6 +9,7 @@ pub enum SoundEffect {
     Collect = 2,
     EnemyHit = 3,
     ShurikenThrow = 4,
+    Death = 5,
 }
 
 // Audio commands that cartridges can send to the console
@@ -45,6 +46,9 @@ pub struct Entity {
     pub health: i32,
     pub animation_frame: u32,
     pub animation_timer: f32,
+    pub is_dying: bool,
+    pub death_timer: f32,
+    pub death_flash_timer: f32,
 }
 
 impl Entity {
@@ -78,6 +82,9 @@ impl Entity {
             },
             animation_frame: 0,
             animation_timer: 0.0,
+            is_dying: false,
+            death_timer: 0.0,
+            death_flash_timer: 0.0,
         }
     }
 }
@@ -139,6 +146,7 @@ pub struct HambertCartridge {
     text_index: usize,
     current_level: u32,
     lives: u32,
+    score: u32,
     invulnerability_timer: f32,
 }
 
@@ -163,6 +171,7 @@ impl HambertCartridge {
             text_index: 0,
             current_level: 1,
             lives: 3,
+            score: 0,
             invulnerability_timer: 0.0,
         };
 
@@ -189,6 +198,9 @@ impl HambertCartridge {
         self.entities.push(Entity::new(EntityType::Platform, 1400.0, 120.0, 1));
         self.entities.push(Entity::new(EntityType::Platform, 1600.0, 80.0, 1));
         self.entities.push(Entity::new(EntityType::Platform, 1800.0, 110.0, 1));
+
+        // Add collectible hamberries scattered throughout the level - sprite ID 6
+        self.spawn_hamberries();
 
         // Add some ninja enemies - sprite ID 3
         // Place ninjas on platforms and ground level
@@ -271,27 +283,51 @@ impl HambertCartridge {
 
             match entity.entity_type {
                 EntityType::Player | EntityType::Ninja => {
-                    // Apply gravity
-                    if !entity.on_ground {
-                        entity.vel_y += GRAVITY;
-                        if entity.vel_y > MAX_FALL_SPEED {
-                            entity.vel_y = MAX_FALL_SPEED;
+                    // Handle death animation for player
+                    if entity.is_dying {
+                        entity.death_timer += 1.0;
+                        entity.death_flash_timer += 1.0;
+                        
+                        // Death animation lasts 180 frames (3 seconds) to show falling through floor
+                        if entity.death_timer >= 180.0 {
+                            // Death animation complete - reset game
+                            self.game_state = GameState::Intro;
+                            self.lives = 3; // Reset lives for next game
+                            self.init_world(); // Reset world
+                            return; // Exit early to avoid processing the rest
                         }
-                    }
-
-                    // Apply velocity
-                    entity.x += entity.vel_x;
-                    entity.y += entity.vel_y;
-
-                    // Apply friction when on ground (increased for more control)
-                    if entity.on_ground {
-                        entity.vel_x *= 0.75;  // More friction on ground
+                        
+                        // Apply death physics (falling backward)
+                        entity.vel_y += GRAVITY * 1.5; // Slightly faster fall when dying
+                        entity.x += entity.vel_x;
+                        entity.y += entity.vel_y;
+                        
+                        // No friction when dying (ragdoll effect)
+                        entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
                     } else {
-                        entity.vel_x *= 0.96;  // Slight air resistance
-                    }
+                        // Normal physics
+                        // Apply gravity
+                        if !entity.on_ground {
+                            entity.vel_y += GRAVITY;
+                            if entity.vel_y > MAX_FALL_SPEED {
+                                entity.vel_y = MAX_FALL_SPEED;
+                            }
+                        }
 
-                    // Keep within world bounds
-                    entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
+                        // Apply velocity
+                        entity.x += entity.vel_x;
+                        entity.y += entity.vel_y;
+
+                        // Apply friction when on ground (increased for more control)
+                        if entity.on_ground {
+                            entity.vel_x *= 0.75;  // More friction on ground
+                        } else {
+                            entity.vel_x *= 0.96;  // Slight air resistance
+                        }
+
+                        // Keep within world bounds
+                        entity.x = entity.x.max(0.0).min(self.world_width - entity.width);
+                    }
                 }
                 EntityType::Shuriken => {
                     // Shuriken physics
@@ -321,9 +357,17 @@ impl HambertCartridge {
         // Enemy collision detection
         self.check_enemy_collisions();
 
+        // Collectible collision detection
+        self.check_collectible_collisions();
+
         // Ground collision - simple flat ground at Y=200
         for entity in &mut self.entities {
             if matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
+                // Let dying players fall through the floor
+                if entity.is_dying {
+                    continue; // Skip ground collision for dying entities
+                }
+                
                 let ground_level = 200.0;
                 if entity.y + entity.height >= ground_level {
                     entity.y = ground_level - entity.height;
@@ -344,6 +388,11 @@ impl HambertCartridge {
 
         for entity in &mut self.entities {
             if !matches!(entity.entity_type, EntityType::Player | EntityType::Ninja) {
+                continue;
+            }
+
+            // Let dying players fall through platforms
+            if entity.is_dying {
                 continue;
             }
 
@@ -375,6 +424,12 @@ impl HambertCartridge {
         }
 
         let player = &self.entities[self.player_id];
+        
+        // Don't check collisions if player is dying
+        if player.is_dying {
+            return;
+        }
+        
         let player_bounds = (player.x, player.y, player.x + player.width, player.y + player.height);
 
         let mut hit_detected = false;
@@ -382,7 +437,7 @@ impl HambertCartridge {
 
         // Check collisions with ninjas and shuriken
         for (i, entity) in self.entities.iter().enumerate() {
-            if !entity.active || entity.entity_type == EntityType::Player || entity.entity_type == EntityType::Platform {
+            if !entity.active || entity.entity_type == EntityType::Player || entity.entity_type == EntityType::Platform || entity.entity_type == EntityType::Collectible {
                 continue;
             }
 
@@ -407,8 +462,8 @@ impl HambertCartridge {
         // Apply damage and effects after the loop
         if hit_detected {
             self.take_damage();
-            // Set invulnerability period (60 frames = 1 second at 60fps)
-            self.invulnerability_timer = 60.0;
+            // Set invulnerability period (180 frames = 3 seconds at 60fps)
+            self.invulnerability_timer = 180.0;
         }
 
         // Deactivate hit shuriken
@@ -417,16 +472,65 @@ impl HambertCartridge {
         }
     }
 
+    fn check_collectible_collisions(&mut self) {
+        if self.player_id >= self.entities.len() {
+            return;
+        }
+
+        let player = &self.entities[self.player_id];
+        
+        // Don't check collisions if player is dying
+        if player.is_dying {
+            return;
+        }
+        
+        let player_bounds = (player.x, player.y, player.x + player.width, player.y + player.height);
+        let mut collected_indices = Vec::new();
+
+        // Check collisions with collectibles (hamberries)
+        for (i, entity) in self.entities.iter().enumerate() {
+            if !entity.active || entity.entity_type != EntityType::Collectible {
+                continue;
+            }
+
+            // Check if collectible overlaps with player
+            if entity.x < player_bounds.2 &&
+               entity.x + entity.width > player_bounds.0 &&
+               entity.y < player_bounds.3 &&
+               entity.y + entity.height > player_bounds.1 {
+                
+                // Mark for collection
+                collected_indices.push(i);
+            }
+        }
+
+        // Collect hamberries and increase score
+        for index in collected_indices {
+            self.entities[index].active = false;
+            self.score += 10; // 10 points per hamberry
+            self.pending_sounds.push(SoundEffect::Collect);
+        }
+    }
+
     fn take_damage(&mut self) {
         if self.lives > 0 {
             self.lives -= 1;
-            self.pending_sounds.push(SoundEffect::EnemyHit);
             
             if self.lives == 0 {
-                // Game over - reset to intro
-                self.game_state = GameState::Intro;
-                self.lives = 3; // Reset lives for next game
-                self.init_world(); // Reset world
+                // Start death animation
+                if self.player_id < self.entities.len() {
+                    let player = &mut self.entities[self.player_id];
+                    player.is_dying = true;
+                    player.death_timer = 0.0;
+                    player.death_flash_timer = 0.0;
+                    player.vel_x = -1.5; // Fall backward slightly faster
+                    player.vel_y = -8.0; // Big upward jump before falling through floor
+                    player.on_ground = false; // Make sure he's airborne
+                }
+                self.pending_sounds.push(SoundEffect::Death);
+            } else {
+                // Just took damage, not dying yet
+                self.pending_sounds.push(SoundEffect::EnemyHit);
             }
         }
     }
@@ -530,6 +634,36 @@ impl HambertCartridge {
         Some(obj)
     }
 
+    fn spawn_hamberries(&mut self) {
+        // Spawn 20 hamberries scattered throughout the level
+        let hamberry_positions = [
+            (120.0, 180.0),   // Ground level
+            (300.0, 160.0),   // Near first platform
+            (230.0, 150.0),   // On first platform
+            (450.0, 120.0),   // On second platform
+            (550.0, 170.0),   // Ground level
+            (630.0, 90.0),    // On third platform
+            (750.0, 180.0),   // Ground level
+            (830.0, 110.0),   // On fourth platform
+            (950.0, 170.0),   // Ground level
+            (1030.0, 80.0),   // On fifth platform
+            (1150.0, 180.0),  // Ground level
+            (1230.0, 70.0),   // On sixth platform
+            (1350.0, 180.0),  // Ground level
+            (1430.0, 100.0),  // On seventh platform
+            (1550.0, 170.0),  // Ground level
+            (1630.0, 60.0),   // On eighth platform
+            (1750.0, 180.0),  // Ground level
+            (1830.0, 90.0),   // On ninth platform
+            (1900.0, 170.0),  // Ground level
+            (1950.0, 160.0),  // Near end
+        ];
+
+        for (x, y) in hamberry_positions.iter() {
+            self.entities.push(Entity::new(EntityType::Collectible, *x, *y, 6));
+        }
+    }
+
     // Intro/Interlude screen methods
     fn update_intro_screen(&mut self, up: bool, down: bool, left: bool, right: bool) {
         // Update typewriter animation
@@ -583,6 +717,45 @@ impl HambertCartridge {
 
     pub fn get_lives(&self) -> u32 {
         self.lives
+    }
+
+    pub fn get_score(&self) -> u32 {
+        self.score
+    }
+
+    pub fn is_player_dying(&self) -> bool {
+        if self.player_id < self.entities.len() {
+            self.entities[self.player_id].is_dying
+        } else {
+            false
+        }
+    }
+
+    pub fn get_player_death_flash(&self) -> bool {
+        if self.player_id < self.entities.len() {
+            let player = &self.entities[self.player_id];
+            if player.is_dying {
+                // Flash every 8 frames (fast flashing)
+                (player.death_flash_timer as u32 / 8) % 2 == 0
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn is_player_invulnerable(&self) -> bool {
+        self.invulnerability_timer > 0.0
+    }
+
+    pub fn get_player_invul_flash(&self) -> bool {
+        if self.invulnerability_timer > 0.0 {
+            // Flash effect - alternate every 8 frames for slower flashing
+            ((self.invulnerability_timer as u32) / 8) % 2 == 0
+        } else {
+            false
+        }
     }
 
     pub fn get_intro_text(&self) -> String {
