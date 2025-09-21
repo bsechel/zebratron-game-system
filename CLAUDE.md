@@ -1,7 +1,7 @@
 # ZebratronGameSystem - Claude Configuration
 
 ## Project Overview
-A custom 8-bit style game system inspired by NES/Master System, built for web browsers using WebAssembly with a focus on making scrolling games easy to develop.
+A custom 8-bit style game system inspired by classic retro consoles, built for web browsers using WebAssembly with a focus on making scrolling games easy to develop.
 
 ## Build Commands
 ```bash
