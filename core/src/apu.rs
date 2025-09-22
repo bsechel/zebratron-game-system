@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 use std::f32::consts::PI;
 use std::collections::HashMap;
+use crate::laugh_sample::{LAUGH_SAMPLE_RETRO_SAMPLE_DATA, LAUGH_SAMPLE_RETRO_SAMPLE_RATE};
 
 #[wasm_bindgen]
 pub struct Apu {
@@ -40,6 +41,14 @@ pub struct Apu {
     sfx_end_note: u8,
     sfx_waveform: u8,
 
+    // Voice synthesis system for chip-tune voice effects
+    voice_active: bool,
+    voice_type: u8,        // 0=laughter, 1=gasp, 2=grunt
+    voice_timer: f32,
+    voice_stage: u8,       // Current stage of multi-part effect
+    voice_stage_timer: f32,
+    voice_oscillator: DigitalOscillator,
+
     // Polyphonic synthesizer for Z-Synth
     synth_oscillators: HashMap<u32, DigitalOscillator>, // MIDI note -> oscillator
     synth_enabled: bool,
@@ -57,12 +66,19 @@ pub struct Apu {
     sid_enabled: bool,
     sid_volume: f32,
     poly_volume: f32,
+    
+    // Sample playback system for short audio clips
+    sample_active: bool,
+    sample_data: Option<&'static [u8]>, // Pointer to sample data
+    sample_data_rate: u32,              // Sample rate of the data
+    sample_position: f32,               // Current playback position (fractional)
+    sample_volume: f32,                 // Volume for sample playback
 }
 
 struct PulseChannel {
     enabled: bool,
     frequency: f32,
-    duty_cycle: u8,
+    pulse_width: u8,
     volume: u8,
     phase: f32,
 }
@@ -134,14 +150,14 @@ impl Apu {
             pulse1: PulseChannel {
                 enabled: false,
                 frequency: 440.0,
-                duty_cycle: 0,
+                pulse_width: 0,
                 volume: 0,
                 phase: 0.0,
             },
             pulse2: PulseChannel {
                 enabled: false,
                 frequency: 440.0,
-                duty_cycle: 0,
+                pulse_width: 0,
                 volume: 0,
                 phase: 0.0,
             },
@@ -218,6 +234,44 @@ impl Apu {
             sfx_start_note: 60,
             sfx_end_note: 60,
             sfx_waveform: 0,
+
+            // Initialize voice synthesis system
+            voice_active: false,
+            voice_type: 0,
+            voice_timer: 0.0,
+            voice_stage: 0,
+            voice_stage_timer: 0.0,
+            voice_oscillator: DigitalOscillator {
+                enabled: false,
+                frequency: 300.0,
+                volume: 0.3,
+                waveform: 0, // Pulse wave for voice
+                phase: 0.0,
+                pulse_width: 0.25, // Thin pulse for crisp voice sound
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false,
+                    filter_type: 0,
+                    cutoff: 0.5,
+                    resonance: 0.1,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.0,
+                    feedback: 0.0,
+                    mix: 0.0,
+                    buffer: vec![0.0; 44100],
+                    buffer_size: 44100,
+                    write_pos: 0,
+                    read_pos: 0,
+                    feedback_filter: 0.0,
+                },
+            },
 
             // Initialize polyphonic synthesizer
             synth_oscillators: HashMap::new(),
@@ -326,6 +380,13 @@ impl Apu {
             sid_enabled: false,
             sid_volume: 0.8,
             poly_volume: 0.8,
+            
+            // Sample playback initialization
+            sample_active: false,
+            sample_data: None,
+            sample_data_rate: 5512,
+            sample_position: 0.0,
+            sample_volume: 0.8,
         }
     }
 
@@ -389,12 +450,36 @@ impl Apu {
             }
         }
 
+        // Update voice effect if active
+        if self.voice_active {
+            // Advance voice timer
+            self.voice_timer += 1.0 / (29780.0 * 60.0);
+            self.voice_stage_timer += 1.0 / (29780.0 * 60.0);
+            
+            // Update voice effect based on type and stage
+            match self.voice_type {
+                0 => self.update_laughter_effect(),
+                1 => self.update_gasp_effect(), 
+                2 => self.update_grunt_effect(),
+                _ => self.voice_active = false,
+            }
+        }
+
         // TODO: Implement proper frame sequencer timing for other channels
     }
 
     pub fn generate_sample(&mut self) -> f32 {
         let mut sample = 0.0;
 
+        // Voice effects (highest priority)
+        if self.voice_active && self.voice_oscillator.enabled {
+            sample += Self::generate_digital_oscillator_sample(&mut self.voice_oscillator, self.sample_rate);
+        }
+        
+        // Sample playback (also high priority)
+        let dt = 1.0 / self.sample_rate;
+        sample += self.update_sample_playback(dt);
+        
         // Always check for sound effects first
         if self.sfx_active && self.test_osc.enabled {
             sample += Self::generate_digital_oscillator_sample(&mut self.test_osc, self.sample_rate);
@@ -457,15 +542,15 @@ impl Apu {
 
     fn generate_pulse_sample(channel: &mut PulseChannel, sample_rate: f32) -> f32 {
         let duty_table = [0.125, 0.25, 0.5, 0.75];
-        let duty_threshold = duty_table[channel.duty_cycle as usize];
+        let duty_threshold = duty_table[channel.pulse_width as usize];
 
         channel.phase += channel.frequency / sample_rate;
         if channel.phase >= 1.0 {
             channel.phase -= 1.0;
         }
 
-        let amplitude = if channel.phase < duty_threshold { 1.0 } else { -1.0 };
-        amplitude * (channel.volume as f32 / 15.0)
+        let volume = if channel.phase < duty_threshold { 1.0 } else { -1.0 };
+        volume * (channel.volume as f32 / 15.0)
     }
 
     fn generate_triangle_sample(channel: &mut TriangleChannel, sample_rate: f32) -> f32 {
@@ -475,13 +560,13 @@ impl Apu {
         }
 
         // Triangle wave: -1 to 1 and back
-        let amplitude = if channel.phase < 0.5 {
+        let volume = if channel.phase < 0.5 {
             4.0 * channel.phase - 1.0
         } else {
             3.0 - 4.0 * channel.phase
         };
 
-        amplitude * 0.5 // Triangle is quieter than pulse
+        volume * 0.5 // Triangle is quieter than pulse
     }
 
     fn generate_noise_sample(channel: &mut NoiseChannel) -> f32 {
@@ -492,15 +577,15 @@ impl Apu {
             channel.shift_register |= 0x4000;
         }
 
-        let amplitude = if (channel.shift_register & 1) != 0 { 1.0 } else { -1.0 };
-        amplitude * (channel.volume as f32 / 15.0) * 0.5
+        let volume = if (channel.shift_register & 1) != 0 { 1.0 } else { -1.0 };
+        volume * (channel.volume as f32 / 15.0) * 0.5
     }
 
     // Register write methods (will be called by CPU when writing to APU registers)
     pub fn write_pulse1_register(&mut self, register: u8, value: u8) {
         match register {
             0 => {
-                self.pulse1.duty_cycle = (value >> 6) & 3;
+                self.pulse1.pulse_width = (value >> 6) & 3;
                 self.pulse1.volume = value & 15;
             }
             1 => {
@@ -851,8 +936,185 @@ impl Apu {
         self.test_osc.enabled = true;
     }
 
+    pub fn play_voice_effect(&mut self, voice_type: u8) {
+        // Don't interrupt an already playing voice effect
+        if self.voice_active {
+            return;
+        }
+        
+        self.voice_active = true;
+        self.voice_type = voice_type;
+        self.voice_timer = 0.0;
+        self.voice_stage = 0;
+        self.voice_stage_timer = 0.0;
+        
+        // Initialize the voice effect based on type
+        match voice_type {
+            0 => self.start_laughter_effect(),
+            1 => self.start_gasp_effect(),
+            2 => self.start_grunt_effect(),
+            _ => self.voice_active = false, // Invalid type
+        }
+    }
+
+    fn start_laughter_effect(&mut self) {
+        // Laughter: "Ha-ha-ha" - 3 stage effect
+        // Stage 0: "Ha" (300Hz, 100ms)
+        self.voice_oscillator.enabled = true;
+        self.voice_oscillator.frequency = 300.0;
+        self.voice_oscillator.volume = 0.4;
+        self.voice_oscillator.waveform = 0; // Pulse wave
+        self.voice_oscillator.pulse_width = 0.25; // Thin pulse
+    }
+
+    fn start_gasp_effect(&mut self) {
+        // Gasp: Sharp intake - noise + triangle sweep
+        self.voice_oscillator.enabled = true;
+        self.voice_oscillator.frequency = 150.0;
+        self.voice_oscillator.volume = 0.3;
+        self.voice_oscillator.waveform = 3; // Noise
+    }
+
+    fn start_grunt_effect(&mut self) {
+        // Grunt: Low effort sound
+        self.voice_oscillator.enabled = true;
+        self.voice_oscillator.frequency = 80.0;
+        self.voice_oscillator.volume = 0.5;
+        self.voice_oscillator.waveform = 0; // Pulse wave
+        self.voice_oscillator.pulse_width = 0.75; // Thick pulse for grunt
+    }
+
+    fn update_laughter_effect(&mut self) {
+        // Laughter: "Ha-ha-ha" with gaps - 6 stages total
+        // Stages 0,2,4: "Ha" sounds (1000ms each)
+        // Stages 1,3,5: Silence gaps (500ms each)
+        let stage_duration = if self.voice_stage % 2 == 0 { 1.0 } else { 0.5 }; // 1000ms ha, 500ms gap
+        
+        if self.voice_stage_timer >= stage_duration {
+            self.voice_stage_timer = 0.0;
+            self.voice_stage += 1;
+            
+            match self.voice_stage {
+                1 => {
+                    // Gap after first "ha"
+                    self.voice_oscillator.enabled = false;
+                },
+                2 => {
+                    // Second "ha" - higher pitch
+                    self.voice_oscillator.enabled = true;
+                    self.voice_oscillator.frequency = 400.0;
+                    self.voice_oscillator.volume = 0.35;
+                },
+                3 => {
+                    // Gap after second "ha"
+                    self.voice_oscillator.enabled = false;
+                },
+                4 => {
+                    // Third "ha" - middle pitch
+                    self.voice_oscillator.enabled = true;
+                    self.voice_oscillator.frequency = 350.0;
+                    self.voice_oscillator.volume = 0.3;
+                },
+                5 => {
+                    // Final gap
+                    self.voice_oscillator.enabled = false;
+                },
+                _ => {
+                    // Laughter complete
+                    self.voice_active = false;
+                    self.voice_oscillator.enabled = false;
+                }
+            }
+        }
+    }
+
+    fn update_gasp_effect(&mut self) {
+        // Gasp: 200ms effect with frequency sweep
+        let duration = 0.2;
+        let progress = (self.voice_timer / duration).min(1.0);
+        
+        if progress >= 1.0 {
+            self.voice_active = false;
+            self.voice_oscillator.enabled = false;
+        } else {
+            // Sweep from 150Hz to 800Hz (inhale effect)
+            let freq = 150.0 + (800.0 - 150.0) * progress;
+            self.voice_oscillator.frequency = freq;
+            
+            // Fade out volume
+            self.voice_oscillator.volume = 0.3 * (1.0 - progress);
+        }
+    }
+
+    fn update_grunt_effect(&mut self) {
+        // Grunt: 150ms with slight pitch bend down
+        let duration = 0.15;
+        let progress = (self.voice_timer / duration).min(1.0);
+        
+        if progress >= 1.0 {
+            self.voice_active = false;
+            self.voice_oscillator.enabled = false;
+        } else {
+            // Slight pitch bend down (80Hz to 70Hz)
+            let freq = 80.0 - 10.0 * progress;
+            self.voice_oscillator.frequency = freq;
+            
+            // Maintain volume throughout
+            self.voice_oscillator.volume = 0.5;
+        }
+    }
+
     pub fn set_master_volume(&mut self, volume: f32) {
         self.master_volume = volume.clamp(0.0, 1.0);
+    }
+    
+    // Sample playback methods
+    pub fn stop_sample(&mut self) {
+        self.sample_active = false;
+        self.sample_data = None;
+        self.sample_position = 0.0;
+    }
+    
+    pub fn set_sample_volume(&mut self, volume: f32) {
+        self.sample_volume = volume.clamp(0.0, 1.0);
+    }
+    
+    pub fn play_laugh_sample(&mut self) {
+        self.sample_data = Some(LAUGH_SAMPLE_RETRO_SAMPLE_DATA);
+        self.sample_data_rate = LAUGH_SAMPLE_RETRO_SAMPLE_RATE;
+        self.sample_position = 0.0;
+        self.sample_active = true;
+    }
+    
+    fn update_sample_playback(&mut self, dt: f32) -> f32 {
+        if !self.sample_active {
+            return 0.0;
+        }
+        
+        if let Some(data) = self.sample_data {
+            let sample_index = self.sample_position as usize;
+            
+            // Check if we've reached the end of the sample
+            if sample_index >= data.len() {
+                self.sample_active = false;
+                self.sample_data = None;
+                return 0.0;
+            }
+            
+            // Get current sample (convert from 8-bit unsigned to signed float)
+            let sample_u8 = data[sample_index];
+            let sample_f32 = (sample_u8 as f32 - 128.0) / 128.0; // Convert to -1.0 to 1.0 range
+            
+            // Advance position based on sample rate ratio
+            // APU runs at 44.1kHz, sample data is at 5.5kHz, but we want proper pitch/duration balance
+            // Using 0.75 to get closer to original pitch while keeping retro quality
+            let advance_rate = (self.sample_data_rate as f32 / self.sample_rate) * 0.75;
+            self.sample_position += advance_rate;
+            
+            return sample_f32 * self.sample_volume;
+        }
+        
+        0.0
     }
 
     // Polyphonic synthesizer methods for Z-Synth

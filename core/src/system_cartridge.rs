@@ -321,6 +321,9 @@ impl ZebratronCartridgeSystem {
             3 => self.play_enemy_hit_sound(), // Enemy hit
             4 => self.play_shuriken_sound(),  // Shuriken throw
             5 => self.play_death_sound(),     // Death
+            6 => self.apu.play_laugh_sample(), // Laughter
+            7 => self.apu.play_voice_effect(1), // Gasp
+            8 => self.apu.play_voice_effect(2), // Grunt
             _ => {}, // Unknown sound
         }
     }

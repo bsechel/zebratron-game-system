@@ -10,6 +10,9 @@ pub enum SoundEffect {
     EnemyHit = 3,
     ShurikenThrow = 4,
     Death = 5,
+    Laughter = 6,
+    Gasp = 7,
+    Grunt = 8,
 }
 
 // Audio commands that cartridges can send to the console
@@ -674,6 +677,9 @@ impl HambertCartridge {
                     blood_goblin.animation_timer = 0.0;
                     
                     self.entities.push(blood_goblin);
+                    
+                    // Play laughter effect when blood goblin spawns
+                    self.pending_sounds.push(SoundEffect::Laughter);
                 }
             }
         }
