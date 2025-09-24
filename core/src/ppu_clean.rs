@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use crate::memory::Memory;
+use crate::font_system::{FontSystem, Language, get_font_data};
 
 const SCREEN_WIDTH: usize = 320;
 const SCREEN_HEIGHT: usize = 240;
@@ -285,6 +286,9 @@ pub struct Ppu {
     // Demo mode toggle
     color_test_mode: bool,
 
+    // Font system for internationalization
+    font_system: FontSystem,
+
     // Intro/interlude screen mode
     intro_mode: bool,
     intro_text: String,
@@ -315,6 +319,7 @@ impl Ppu {
             frame_count: 0,
             sprites: Vec::new(),
             color_test_mode: false,
+            font_system: FontSystem::new(),
             intro_mode: false,
             intro_text: String::new(),
             zsynth_mode: false,
@@ -969,19 +974,22 @@ impl Ppu {
     }
 
     fn render_text(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8)) {
-        // Simple text rendering using the font
-        for (i, ch) in text.chars().enumerate() {
-            if ch.is_ascii() {
-                let char_index = (ch as u8).saturating_sub(32) as usize;
-                if char_index < FONT_8X8.len() {
-                    self.render_char(char_index, x + i * 8, y, color);
-                }
+        // Multi-language text rendering using the font system
+        let characters = self.font_system.encode_text(text);
+        
+        for (i, character) in characters.iter().enumerate() {
+            if let Some(font_data) = get_font_data(character.glyph_index) {
+                self.render_char_data(font_data, x + i * 8, y, color);
             }
         }
     }
 
-    fn render_char(&mut self, char_index: usize, x: usize, y: usize, color: (u8, u8, u8)) {
-        let font_data = FONT_8X8[char_index];
+    // Set the language for text rendering
+    pub fn set_language(&mut self, language: Language) {
+        self.font_system.set_language(language);
+    }
+
+    fn render_char_data(&mut self, font_data: &[u8; 8], x: usize, y: usize, color: (u8, u8, u8)) {
 
         for row in 0..8 {
             let byte = font_data[row];

@@ -9,6 +9,7 @@ mod system_cartridge;
 mod cartridge;
 mod sprite_converter;
 mod laugh_sample;
+mod font_system;
 
 use wasm_bindgen::prelude::*;
 

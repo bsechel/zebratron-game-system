@@ -97,9 +97,51 @@ The runtime provides browser integration and high-level APIs:
 
 #### `/tools/`
 - **png_to_sprite.rs**: PNG to sprite data converter
+- **wav_to_sample.rs**: WAV to 8-bit sample data converter
 - **asset-converter/**: Asset processing utilities
 - Sprite data files for game assets
 - Build tools and automation scripts
+
+#### Audio Sample Conversion
+
+The `wav_to_sample` tool converts WAV audio files to retro 8-bit sample data:
+
+**Usage:**
+```bash
+cd tools
+cargo build --release
+./target/release/wav_to_sample input.wav sample_name
+```
+
+**Features:**
+- Converts any WAV format (16-bit, 8-bit, float) to 8-bit unsigned
+- Automatic stereo to mono conversion
+- Downsampling to 5.5kHz for authentic retro quality
+- Generates Rust constants for embedding in game code
+- Maximum 2-second duration (11,024 samples at 5.5kHz)
+- Output format: `sample_name_sample.rs` with data arrays
+
+**Example:**
+```bash
+# Convert laugh.wav to retro sample data
+./target/release/wav_to_sample laugh.wav player_laugh
+
+# Generates: player_laugh_sample.rs with:
+# - PLAYER_LAUGH_SAMPLE_DATA: &[u8] array
+# - PLAYER_LAUGH_SAMPLE_RATE: u32 constant
+```
+
+**Integration:**
+1. Copy generated `.rs` file to `/core/src/`
+2. Add module to `lib.rs`: `mod player_laugh_sample;`
+3. Import constants in APU: `use crate::player_laugh_sample::*;`
+4. Play sample: `apu.play_sample(PLAYER_LAUGH_SAMPLE_DATA, PLAYER_LAUGH_SAMPLE_RATE);`
+
+**Audio Quality Settings:**
+- **Sample Rate**: 5.5kHz (retro quality, smaller file size)
+- **Bit Depth**: 8-bit unsigned (0-255 range)
+- **Format**: Raw PCM data arrays
+- **Duration**: Auto-truncated to 2 seconds maximum
 
 ## Game Development Model
 

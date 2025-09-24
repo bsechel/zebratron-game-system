@@ -4,6 +4,7 @@ use crate::ppu_clean::Ppu;
 use crate::apu::Apu;
 use crate::memory::Memory;
 use crate::cartridge::{HambertCartridge, ZSynthCartridge};
+use crate::font_system::{FontSystem, Language};
 use crate::utils;
 
 #[wasm_bindgen]
@@ -18,6 +19,7 @@ pub struct ZebratronCartridgeSystem {
     running: bool,
     frame_ready: bool,
     last_game_state: u32, // Track game state changes for audio management
+    font_system: FontSystem, // Internationalization support
 }
 
 #[wasm_bindgen]
@@ -26,7 +28,7 @@ impl ZebratronCartridgeSystem {
     pub fn new() -> ZebratronCartridgeSystem {
         utils::set_panic_hook();
 
-        ZebratronCartridgeSystem {
+        let mut system = ZebratronCartridgeSystem {
             cpu: Cpu::new(),
             ppu: Ppu::new(),
             apu: Apu::new(),
@@ -37,7 +39,12 @@ impl ZebratronCartridgeSystem {
             running: false,
             frame_ready: false,
             last_game_state: 0, // Start with intro state
-        }
+            font_system: FontSystem::new(), // Initialize font system with English
+        };
+        
+        // Set to Japanese language for hiragana text
+        system.set_language(1); // 1 = Japanese
+        system
     }
 
     // Load the Hambert cartridge
@@ -154,7 +161,7 @@ impl ZebratronCartridgeSystem {
                     if game_state == 0 || game_state == 2 { // Intro or Interlude
                         self.ppu.set_intro_mode(true);
                         self.ppu.set_zsynth_mode(false);
-                        let intro_text = cartridge.get_intro_text();
+                        let intro_text = cartridge.get_intro_text_display();
                         self.ppu.set_intro_text(intro_text);
                         // Reset scroll for intro screen
                         self.ppu.set_scroll(0.0, 0.0);
@@ -423,6 +430,24 @@ impl ZebratronCartridgeSystem {
         self.apu.is_sound_test_mode()
     }
 
+    // Language switching support for internationalization
+    pub fn set_language(&mut self, language: u32) {
+        let lang = match language {
+            0 => Language::English,
+            1 => Language::Japanese,
+            _ => Language::English, // Default to English
+        };
+        self.font_system.set_language(lang);
+        self.ppu.set_language(lang);
+    }
+
+    pub fn get_language(&self) -> u32 {
+        match self.font_system.current_language {
+            Language::English => 0,
+            Language::Japanese => 1,
+        }
+    }
+
     pub fn sound_test_change_waveform(&mut self, waveform: u32) {
         self.apu.sound_test_change_waveform(waveform as u8);
     }
@@ -450,6 +475,15 @@ impl ZebratronCartridgeSystem {
 
     pub fn generate_audio_sample(&mut self) -> f32 {
         self.apu.generate_sample()
+    }
+
+    // Get intro text for display (for Japanese hiragana text)
+    pub fn get_intro_text(&self) -> String {
+        if let Some(ref cartridge) = self.hambert_cartridge {
+            cartridge.get_intro_text_display()
+        } else {
+            String::new()
+        }
     }
 
     // Filter controls

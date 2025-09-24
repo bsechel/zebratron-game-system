@@ -133,6 +133,26 @@ pub enum GameState {
     Intro,
     Playing,
     Interlude,
+    GameOver,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum LevelType {
+    Platformer,
+    Puzzle,
+    Boss,
+    Story,
+}
+
+#[derive(Clone)]
+pub struct Level {
+    pub id: u32,
+    pub level_type: LevelType,
+    pub title_key: &'static str, // For localization
+    pub description_key: &'static str, // For localization
+    pub target_score: u32,
+    pub time_limit: Option<u32>, // Optional time limit in seconds
+    pub completed: bool,
 }
 
 // The Hambert cartridge - extracted game logic
@@ -156,6 +176,12 @@ pub struct HambertCartridge {
     lives: u32,
     score: u32,
     invulnerability_timer: f32,
+    
+    // Level progression system
+    levels: Vec<Level>,
+    current_level_index: usize,
+    interlude_text: Vec<&'static str>, // Current interlude text
+    interlude_text_index: usize,
 }
 
 #[wasm_bindgen]
@@ -181,10 +207,17 @@ impl HambertCartridge {
             lives: 3,
             score: 0,
             invulnerability_timer: 0.0,
+            
+            // Initialize level progression
+            levels: Vec::new(),
+            current_level_index: 0,
+            interlude_text: Vec::new(),
+            interlude_text_index: 0,
         };
 
         // Initialize the game world
         cartridge.init_world();
+        cartridge.init_levels();
         cartridge
     }
 
@@ -218,6 +251,48 @@ impl HambertCartridge {
         self.entities.push(Entity::new(EntityType::Hexagnome, 1300.0, 88.0, 3)); // On higher platform
     }
 
+    fn init_levels(&mut self) {
+        // Define the level progression for Hambert's adventure
+        self.levels = vec![
+            Level {
+                id: 1,
+                level_type: LevelType::Platformer,
+                title_key: "level_1_title",
+                description_key: "level_1_desc",
+                target_score: 500,
+                time_limit: None,
+                completed: false,
+            },
+            Level {
+                id: 2,
+                level_type: LevelType::Platformer,
+                title_key: "level_2_title", 
+                description_key: "level_2_desc",
+                target_score: 800,
+                time_limit: Some(120), // 2 minutes
+                completed: false,
+            },
+            Level {
+                id: 3,
+                level_type: LevelType::Boss,
+                title_key: "boss_level_title",
+                description_key: "boss_level_desc", 
+                target_score: 1200,
+                time_limit: None,
+                completed: false,
+            },
+            Level {
+                id: 4,
+                level_type: LevelType::Story,
+                title_key: "story_level_title",
+                description_key: "story_level_desc",
+                target_score: 0, // Story levels don't require score
+                time_limit: None,
+                completed: false,
+            },
+        ];
+    }
+
     pub fn update_game(&mut self, up: bool, down: bool, left: bool, right: bool) {
         self.frame_count += 1;
 
@@ -241,11 +316,21 @@ impl HambertCartridge {
                 // Add pending shuriken
                 self.entities.extend(self.pending_shuriken.drain(..));
 
+                // Check for level completion
+                self.check_level_completion();
+
                 // Update camera to follow player
                 self.update_camera();
             },
             GameState::Interlude => {
                 self.update_interlude_screen(up, down, left, right);
+            },
+            GameState::GameOver => {
+                // Handle game over state - restart or quit options
+                if up {
+                    // Restart game
+                    self.restart_game();
+                }
             },
         }
     }
@@ -779,7 +864,9 @@ impl HambertCartridge {
 
         let chars_per_second = 20.0; // Speed of typewriter effect
         let target_index = (self.text_timer * chars_per_second) as usize;
-        let intro_text = "Get ready for a funny adventure!";
+        
+        // Get intro text based on current language
+        let intro_text = self.get_intro_text_full();
 
         if target_index > self.text_index && self.text_index < intro_text.len() {
             self.text_index = target_index.min(intro_text.len());
@@ -792,34 +879,19 @@ impl HambertCartridge {
             self.text_index = 0;
         }
     }
-
-    fn update_interlude_screen(&mut self, up: bool, down: bool, left: bool, right: bool) {
-        // Update typewriter animation
-        self.text_timer += 1.0 / 60.0;
-
-        let chars_per_second = 20.0;
-        let target_index = (self.text_timer * chars_per_second) as usize;
-        let interlude_text = &format!("Level {} Complete! Ready for more?", self.current_level);
-
-        if target_index > self.text_index && self.text_index < interlude_text.len() {
-            self.text_index = target_index.min(interlude_text.len());
-        }
-
-        // Any key to continue to next level after text is complete
-        if (up || down || left || right) && self.text_index >= interlude_text.len() {
-            self.current_level += 1;
-            self.game_state = GameState::Playing;
-            self.text_timer = 0.0;
-            self.text_index = 0;
-            // Could reset world or load new level here
-        }
+    
+    fn get_intro_text_full(&self) -> &'static str {
+        // Japanese adventure message in hiragana: "Let's prepare for an interesting adventure!"
+        "おもしろいぼうけんのじゅんびをしましょう！"
     }
+
 
     pub fn get_game_state(&self) -> u32 {
         match self.game_state {
             GameState::Intro => 0,
             GameState::Playing => 1,
             GameState::Interlude => 2,
+            GameState::GameOver => 3,
         }
     }
 
@@ -866,19 +938,6 @@ impl HambertCartridge {
         }
     }
 
-    pub fn get_intro_text(&self) -> String {
-        match self.game_state {
-            GameState::Intro => {
-                let full_text = "Get ready for a funny adventure!";
-                full_text.chars().take(self.text_index).collect()
-            },
-            GameState::Interlude => {
-                let full_text = format!("Level {} Complete! Ready for more?", self.current_level);
-                full_text.chars().take(self.text_index).collect()
-            },
-            _ => String::new(),
-        }
-    }
 
     // Audio interface methods
     pub fn get_pending_sounds(&self) -> Vec<u32> {
@@ -887,6 +946,205 @@ impl HambertCartridge {
 
     pub fn clear_pending_sounds(&mut self) {
         self.pending_sounds.clear();
+    }
+
+    // Level progression methods
+    fn check_level_completion(&mut self) {
+        if self.current_level_index >= self.levels.len() {
+            return;
+        }
+
+        let current_level = &self.levels[self.current_level_index];
+        let mut level_complete = false;
+
+        match current_level.level_type {
+            LevelType::Platformer => {
+                // Complete when reaching end of level or target score
+                if self.score >= current_level.target_score || 
+                   (self.entities.len() > 0 && self.entities[self.player_id].x >= self.world_width - 100.0) {
+                    level_complete = true;
+                }
+            },
+            LevelType::Boss => {
+                // Complete when all enemies are defeated
+                let enemies_remaining = self.entities.iter()
+                    .filter(|e| matches!(e.entity_type, EntityType::Hexagnome | EntityType::BloodGoblin))
+                    .count();
+                if enemies_remaining == 0 {
+                    level_complete = true;
+                }
+            },
+            LevelType::Story => {
+                // Story levels auto-complete after a set time
+                if self.text_timer > 5.0 { // 5 seconds
+                    level_complete = true;
+                }
+            },
+            LevelType::Puzzle => {
+                // Puzzle completion logic (future implementation)
+                level_complete = false;
+            }
+        }
+
+        if level_complete {
+            self.complete_level();
+        }
+    }
+
+    fn complete_level(&mut self) {
+        if self.current_level_index < self.levels.len() {
+            self.levels[self.current_level_index].completed = true;
+            self.current_level_index += 1;
+
+            if self.current_level_index < self.levels.len() {
+                // Start interlude before next level
+                self.start_interlude();
+            } else {
+                // All levels completed - victory!
+                self.game_state = GameState::GameOver;
+            }
+        }
+    }
+
+    fn start_interlude(&mut self) {
+        self.game_state = GameState::Interlude;
+        self.text_timer = 0.0;
+        self.interlude_text_index = 0;
+
+        // Set interlude text based on next level
+        if self.current_level_index < self.levels.len() {
+            let next_level = &self.levels[self.current_level_index];
+            match next_level.level_type {
+                LevelType::Boss => {
+                    self.interlude_text = vec![
+                        "A mighty foe awaits...",
+                        "Prepare for battle!",
+                    ];
+                },
+                LevelType::Story => {
+                    self.interlude_text = vec![
+                        "The story continues...",
+                        "What secrets lie ahead?",
+                    ];
+                },
+                _ => {
+                    self.interlude_text = vec![
+                        "Level Complete!",
+                        "Moving to next area...",
+                    ];
+                }
+            }
+        }
+    }
+
+    fn update_interlude_screen(&mut self, up: bool, down: bool, left: bool, right: bool) {
+        self.text_timer += 1.0 / 60.0; // Assuming 60 FPS
+
+        // Auto-advance text every 2 seconds
+        if self.text_timer >= 2.0 {
+            self.text_timer = 0.0;
+            self.interlude_text_index += 1;
+
+            if self.interlude_text_index >= self.interlude_text.len() {
+                // Interlude complete, start next level
+                self.start_next_level();
+            }
+        }
+
+        // Allow manual advancement with any button
+        if up || down || left || right {
+            self.interlude_text_index += 1;
+            if self.interlude_text_index >= self.interlude_text.len() {
+                self.start_next_level();
+            }
+        }
+    }
+
+    fn start_next_level(&mut self) {
+        self.game_state = GameState::Playing;
+        self.text_timer = 0.0;
+        
+        // Reset level state
+        self.entities.clear();
+        self.pending_shuriken.clear();
+        self.camera_x = 0.0;
+        self.camera_y = 0.0;
+        
+        // Initialize new level
+        self.init_world();
+        
+        // Adjust difficulty based on level
+        if self.current_level_index < self.levels.len() {
+            let level = &self.levels[self.current_level_index];
+            match level.level_type {
+                LevelType::Boss => {
+                    // Spawn boss enemy
+                    self.entities.push(Entity::new(EntityType::BloodGoblin, 1500.0, 100.0, 4));
+                },
+                LevelType::Story => {
+                    // Clear entities for story mode
+                    self.entities.retain(|e| e.entity_type == EntityType::Player);
+                },
+                _ => {
+                    // Standard platformer level - entities already set up in init_world
+                }
+            }
+        }
+    }
+
+    fn restart_game(&mut self) {
+        // Reset all game state
+        self.game_state = GameState::Intro;
+        self.current_level_index = 0;
+        self.lives = 3;
+        self.score = 0;
+        self.text_timer = 0.0;
+        self.text_index = 0;
+        
+        // Reset level completion status
+        for level in &mut self.levels {
+            level.completed = false;
+        }
+        
+        // Reset world
+        self.entities.clear();
+        self.pending_shuriken.clear();
+        self.camera_x = 0.0;
+        self.camera_y = 0.0;
+        self.init_world();
+    }
+
+    // Public API for level information
+    pub fn get_current_level(&self) -> u32 {
+        if self.current_level_index < self.levels.len() {
+            self.levels[self.current_level_index].id
+        } else {
+            0 // Game complete
+        }
+    }
+
+    pub fn get_level_count(&self) -> usize {
+        self.levels.len()
+    }
+
+    pub fn get_interlude_text(&self) -> String {
+        if self.interlude_text_index < self.interlude_text.len() {
+            self.interlude_text[self.interlude_text_index].to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    // Get the intro text for display
+    pub fn get_intro_text_display(&self) -> String {
+        let full_text = self.get_intro_text_full();
+        // Return text up to current text_index for typewriter effect
+        let chars: Vec<char> = full_text.chars().collect();
+        if self.text_index < chars.len() {
+            chars[..self.text_index].iter().collect()
+        } else {
+            full_text.to_string()
+        }
     }
 }
 
