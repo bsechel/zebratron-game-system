@@ -3,7 +3,7 @@ use crate::cpu::Cpu;
 use crate::ppu_clean::Ppu;
 use crate::apu::Apu;
 use crate::memory::Memory;
-use crate::cartridge::{HambertCartridge, ZSynthCartridge};
+use crate::cartridge::{Cartridge, HambertCartridge, ZSynthCartridge, GameInput, SystemBus, PpuCommand, ApuCommand};
 use crate::font_system::{FontSystem, Language};
 use crate::utils;
 
@@ -13,9 +13,7 @@ pub struct ZebratronCartridgeSystem {
     ppu: Ppu,
     apu: Apu,
     memory: Memory,
-    hambert_cartridge: Option<HambertCartridge>,
-    zsynth_cartridge: Option<ZSynthCartridge>,
-    current_cartridge_type: u8, // 0=none, 1=hambert, 2=zsynth
+    cartridge: Option<Box<dyn Cartridge>>,
     running: bool,
     frame_ready: bool,
     last_game_state: u32, // Track game state changes for audio management
@@ -33,42 +31,34 @@ impl ZebratronCartridgeSystem {
             ppu: Ppu::new(),
             apu: Apu::new(),
             memory: Memory::new(),
-            hambert_cartridge: None,
-            zsynth_cartridge: None,
-            current_cartridge_type: 0,
+            cartridge: None,
             running: false,
             frame_ready: false,
             last_game_state: 0, // Start with intro state
             font_system: FontSystem::new(), // Initialize font system with English
         };
         
-        // Set to Japanese language for hiragana text
         system.set_language(1); // 1 = Japanese
         system
     }
 
-    // Load the Hambert cartridge
     pub fn load_hambert_cartridge(&mut self) -> bool {
-        let hambert = HambertCartridge::new();
-        self.hambert_cartridge = Some(hambert);
-        self.zsynth_cartridge = None;
-        self.current_cartridge_type = 1;
+        self.cartridge = Some(Box::new(HambertCartridge::new()));
         self.reset();
         true
     }
 
-    // Load the Z-Synth cartridge
     pub fn load_zsynth_cartridge(&mut self) -> bool {
-        let zsynth = ZSynthCartridge::new();
-        self.zsynth_cartridge = Some(zsynth);
-        self.hambert_cartridge = None;
-        self.current_cartridge_type = 2;
+        self.cartridge = Some(Box::new(ZSynthCartridge::new()));
         self.reset();
         true
     }
 
     pub fn reset(&mut self) {
         self.cpu.reset();
+        if let Some(cart) = &mut self.cartridge {
+            cart.reset();
+        }
         self.running = false;
         self.frame_ready = false;
     }
@@ -85,303 +75,98 @@ impl ZebratronCartridgeSystem {
         self.running
     }
 
-    // Step one frame - handles cartridge update and PPU rendering
     pub fn step_frame(&mut self) -> bool {
-        if !self.running {
+        if !self.running || self.cartridge.is_none() {
             return false;
         }
 
-        // Step PPU until a frame is complete (authentic timing)
         loop {
             let frame_complete = self.ppu.step(&self.memory);
-
-            // Step APU for sound effect processing
             self.apu.step();
 
             if frame_complete {
                 self.frame_ready = true;
-
-                // Update cartridge game logic every frame
-                match self.current_cartridge_type {
-                    1 => {
-                        if let Some(ref mut cartridge) = self.hambert_cartridge {
-                            cartridge.update_game(false, false, false, false); // No input here, input handled separately
-                        }
-                    }
-                    2 => {
-                        if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                            cartridge.update_synth(); // Z-Synth doesn't use regular input here
-                        }
-                    }
-                    _ => {}
-                }
-
-                // Sync cartridge data with PPU
-                self.sync_cartridge_to_ppu();
-
-                // Process cartridge audio commands
-                self.process_cartridge_audio();
-
+                let bus = self.cartridge.as_mut().unwrap().update(&GameInput::default());
+                self.process_system_bus(bus);
                 return true;
             }
         }
     }
 
-    // Update cartridge game logic and sync with PPU
     pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool) {
-        match self.current_cartridge_type {
-            1 => {
-                if let Some(ref mut cartridge) = self.hambert_cartridge {
-                    // Update cartridge with input
-                    cartridge.update_game(up, down, left, right);
-                }
-            }
-            2 => {
-                // Z-Synth doesn't use directional input
-                // Key input is handled separately via handle_zsynth_key methods
-            }
-            _ => {}
-        }
-
-        // Sync cartridge data with PPU
-        self.sync_cartridge_to_ppu();
-
-        // Process cartridge audio commands
-        self.process_cartridge_audio();
-    }
-
-    fn sync_cartridge_to_ppu(&mut self) {
-        match self.current_cartridge_type {
-            1 => {
-                // Hambert cartridge
-                if let Some(ref cartridge) = self.hambert_cartridge {
-                    let game_state = cartridge.get_game_state();
-
-                    // Set PPU mode based on game state
-                    if game_state == 0 || game_state == 2 { // Intro or Interlude
-                        self.ppu.set_intro_mode(true);
-                        self.ppu.set_zsynth_mode(false);
-                        let intro_text = cartridge.get_intro_text_display();
-                        self.ppu.set_intro_text(intro_text);
-                        // Reset scroll for intro screen
-                        self.ppu.set_scroll(0.0, 0.0);
-                    } else { // Playing
-                        self.ppu.set_intro_mode(false);
-                        self.ppu.set_zsynth_mode(false);
-
-                        // Update PPU scroll position based on cartridge camera
-                        let camera_x = cartridge.get_camera_x();
-                        let camera_y = cartridge.get_camera_y();
-                        self.ppu.set_scroll(camera_x, camera_y);
-
-                        // Clear existing sprites
-                        self.ppu.clear_sprites();
-
-                        // Add cartridge entities as sprites to PPU
-                        for i in 0..cartridge.get_entity_count() {
-                            if let Some(entity_data) = cartridge.get_entity_data(i) {
-                                let x = js_sys::Reflect::get(&entity_data, &"x".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as f32;
-                                let y = js_sys::Reflect::get(&entity_data, &"y".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as f32;
-                                let sprite_id = js_sys::Reflect::get(&entity_data, &"sprite_id".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as u32;
-                                let active = js_sys::Reflect::get(&entity_data, &"active".into())
-                                    .unwrap()
-                                    .as_bool()
-                                    .unwrap_or(false);
-                                let facing_left = js_sys::Reflect::get(&entity_data, &"facing_left".into())
-                                    .unwrap()
-                                    .as_bool()
-                                    .unwrap_or(false);
-
-                                self.ppu.add_sprite(x, y, sprite_id, active, facing_left);
-                            }
-                        }
-
-                        // Sync player states for visual effects
-                        self.ppu.set_lives(cartridge.get_lives());
-                        self.ppu.set_player_death_state(cartridge.is_player_dying(), cartridge.get_player_death_flash());
-                        self.ppu.set_player_invulnerability_state(cartridge.is_player_invulnerable(), cartridge.get_player_invul_flash());
-                    }
-                }
-            }
-            2 => {
-                // Z-Synth cartridge - piano keyboard display mode
-                self.ppu.set_intro_mode(false);
-                self.ppu.set_zsynth_mode(true);
-                
-                if let Some(ref cartridge) = self.zsynth_cartridge {
-                    // Clear existing sprites
-                    self.ppu.clear_sprites();
-                    
-                    // Add piano keys as visual sprites
-                    for i in 0..cartridge.get_piano_key_count() {
-                        if let Some(key_data) = cartridge.get_piano_key_data(i) {
-                            let x = js_sys::Reflect::get(&key_data, &"x".into())
-                                .unwrap()
-                                .as_f64()
-                                .unwrap_or(0.0) as f32;
-                            let y = js_sys::Reflect::get(&key_data, &"y".into())
-                                .unwrap()
-                                .as_f64()
-                                .unwrap_or(0.0) as f32;
-                            let is_black = js_sys::Reflect::get(&key_data, &"is_black".into())
-                                .unwrap()
-                                .as_bool()
-                                .unwrap_or(false);
-                            let is_pressed = js_sys::Reflect::get(&key_data, &"is_pressed".into())
-                                .unwrap()
-                                .as_bool()
-                                .unwrap_or(false);
-                            
-                            // Use different sprite IDs for different key states
-                            // 10 = white key unpressed, 11 = white key pressed
-                            // 12 = black key unpressed, 13 = black key pressed
-                            let sprite_id = if is_black {
-                                if is_pressed { 13 } else { 12 }
-                            } else {
-                                if is_pressed { 11 } else { 10 }
-                            };
-                            
-                            self.ppu.add_sprite(x, y, sprite_id, true, false); // Piano keys don't flip
-                        }
-                    }
-                }
-                
-                self.ppu.set_scroll(0.0, 0.0);
-            }
-            _ => {}
+        if let Some(cart) = &mut self.cartridge {
+            let input = GameInput { up, down, left, right, ..Default::default() };
+            let bus = cart.update(&input);
+            self.process_system_bus(bus);
         }
     }
 
-    fn process_cartridge_audio(&mut self) {
-        // Check for game state changes and stop audio if transitioning to intro
-        if self.current_cartridge_type == 1 {
-            if let Some(ref cartridge) = self.hambert_cartridge {
-                let current_state = cartridge.get_game_state();
-                
-                // If we transition to intro (state 0), stop all audio
-                if current_state == 0 && self.last_game_state != 0 {
-                    self.stop_all_audio();
+    fn process_system_bus(&mut self, bus: SystemBus) {
+        for cmd in bus.ppu_commands {
+            match cmd {
+                PpuCommand::SetScroll(x, y) => self.ppu.set_scroll(x, y),
+                PpuCommand::AddSprite(sprite) => self.ppu.add_sprite(sprite.x, sprite.y, sprite.sprite_id, sprite.active, sprite.flip_horizontal),
+                PpuCommand::ClearSprites => self.ppu.clear_sprites(),
+                PpuCommand::SetMode(mode) => {
+                    match mode {
+                        crate::cartridge::PpuMode::Game => {
+                            self.ppu.set_intro_mode(false);
+                            self.ppu.set_zsynth_mode(false);
+                        }
+                        crate::cartridge::PpuMode::Intro => {
+                            self.ppu.set_intro_mode(true);
+                            self.ppu.set_zsynth_mode(false);
+                        }
+                        crate::cartridge::PpuMode::ZSynth => {
+                            self.ppu.set_intro_mode(false);
+                            self.ppu.set_zsynth_mode(true);
+                        }
+                    }
                 }
-                
-                self.last_game_state = current_state;
+                PpuCommand::SetHudData(hud) => {
+                    self.ppu.set_lives(hud.lives);
+                    self.ppu.set_player_death_state(hud.is_dying, hud.death_flash);
+                    self.ppu.set_player_invulnerability_state(hud.is_invulnerable, hud.invuln_flash);
+                    if let Some(text) = hud.intro_text {
+                        self.ppu.set_intro_text(text);
+                    }
+                }
             }
         }
-        
-        match self.current_cartridge_type {
-            1 => {
-                // Hambert cartridge - process sound effects
-                let pending_sounds = if let Some(ref cartridge) = self.hambert_cartridge {
-                    cartridge.get_pending_sounds()
-                } else {
-                    Vec::new()
-                };
 
-                // Process each sound effect
-                for sound_id in pending_sounds {
-                    self.play_sound_effect(sound_id);
-                }
-
-                // Clear processed sounds
-                if let Some(ref mut cartridge) = self.hambert_cartridge {
-                    cartridge.clear_pending_sounds();
-                }
+        for cmd in bus.apu_commands {
+            match cmd {
+                ApuCommand::PlaySoundEffect(id) => self.play_sound_effect(id),
+                ApuCommand::SynthNoteOn(note) => self.apu.synth_note_on(note),
+                ApuCommand::SynthNoteOff(note) => self.apu.synth_note_off(note),
+                ApuCommand::StopAllAudio => self.stop_all_audio(),
             }
-            2 => {
-                // Z-Synth cartridge - process note on/off events
-                if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                    let notes_on = cartridge.get_pending_note_on();
-                    let notes_off = cartridge.get_pending_note_off();
-
-                    // Process note on events
-                    for note in notes_on {
-                        self.apu.synth_note_on(note);
-                    }
-
-                    // Process note off events
-                    for note in notes_off {
-                        self.apu.synth_note_off(note);
-                    }
-
-                    // Clear processed notes
-                    cartridge.clear_pending_notes();
-                }
-            }
-            _ => {}
         }
     }
 
     fn play_sound_effect(&mut self, sound_id: u32) {
-        // Map sound IDs to APU actions
         match sound_id {
-            0 => self.play_jump_sound(),      // Jump
-            1 => self.play_land_sound(),      // Land
-            2 => self.play_collect_sound(),   // Collect
-            3 => self.play_enemy_hit_sound(), // Enemy hit
-            4 => self.play_shuriken_sound(),  // Shuriken throw
-            5 => self.play_death_sound(),     // Death
-            6 => self.apu.play_laugh_sample(), // Laughter
-            7 => self.apu.play_voice_effect(1), // Gasp
-            8 => self.apu.play_voice_effect(2), // Grunt
-            _ => {}, // Unknown sound
+            0 => self.apu.play_sound_effect(60, 79, 1, 0.6),      // Jump
+            1 => self.apu.play_sound_effect(55, 40, 0, 0.15),     // Land
+            2 => self.apu.play_sound_effect(72, 84, 3, 0.2),      // Collect
+            3 => self.apu.play_sound_effect(60, 48, 4, 0.1),      // Enemy hit
+            4 => self.apu.play_sound_effect(55, 48, 2, 0.15),     // Shuriken throw
+            5 => self.apu.play_sound_effect(84, 36, 1, 1.0),      // Death
+            6 => self.apu.play_laugh_sample(),                     // Laughter
+            7 => self.apu.play_voice_effect(1),                    // Gasp
+            8 => self.apu.play_voice_effect(2),                    // Grunt
+            _ => {},
         }
-    }
-
-    fn play_jump_sound(&mut self) {
-        // Longer, smoother rising pitch sweep from C4 to G5 over 0.6 seconds
-        self.apu.play_sound_effect(60, 79, 1, 0.6); // C4 to G5, sawtooth, 600ms
-    }
-
-    fn play_land_sound(&mut self) {
-        // Short downward thud for landing
-        self.apu.play_sound_effect(55, 40, 0, 0.15); // G3 to E2, pulse wave, 150ms
-    }
-
-    fn play_collect_sound(&mut self) {
-        // Pleasant pickup sound - use timed sound effect
-        self.apu.play_sound_effect(72, 84, 3, 0.2); // C5 to C6, sine wave, 200ms
-    }
-
-    fn play_enemy_hit_sound(&mut self) {
-        // Sharp hit sound - brief noise burst
-        self.apu.play_sound_effect(60, 48, 4, 0.1); // C4 to C3, noise, 100ms
-    }
-
-    fn play_shuriken_sound(&mut self) {
-        // Whoosh sound for projectile - brief triangle wave
-        self.apu.play_sound_effect(55, 48, 2, 0.15); // G3 to C3, triangle, 150ms
-    }
-
-    fn play_death_sound(&mut self) {
-        // Dramatic descending death sound - classic "bonk" effect
-        // Start high and sweep down over 1 second for dramatic effect
-        self.apu.play_sound_effect(84, 36, 1, 1.0); // C6 down to C2, sawtooth, 1 second
     }
 
     pub fn render(&mut self) {
-        // Update PPU with current game state
-        if let Some(cartridge) = &self.hambert_cartridge {
-            self.ppu.set_lives(cartridge.get_lives());
-            self.ppu.set_player_death_state(
-                cartridge.is_player_dying(),
-                cartridge.get_player_death_flash()
-            );
-        }
-        
         self.ppu.render();
     }
 
     pub fn stop_all_audio(&mut self) {
-        // Stop all audio when transitioning between game states
         self.apu.exit_sound_test_mode();
+        self.apu.sid_stop_all();
+        self.apu.poly_stop_all();
     }
 
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
@@ -389,29 +174,12 @@ impl ZebratronCartridgeSystem {
         js_sys::Uint8Array::from(&buffer[..])
     }
 
-    // PPU control methods
     pub fn toggle_color_test(&mut self) {
         self.ppu.toggle_color_test();
     }
 
     pub fn get_color_test_mode(&self) -> bool {
         self.ppu.get_color_test_mode()
-    }
-
-    // APU methods (simplified for cartridge system)
-    pub fn initialize_audio(&mut self) {
-        // Simplified - no-op for cartridge system
-    }
-
-    pub fn is_audio_available(&self) -> bool {
-        true // Simplified - assume audio is always available
-    }
-
-    pub fn get_audio_info(&self) -> Option<js_sys::Object> {
-        let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"sampleRate".into(), &44100u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"estimatedLatency".into(), &20u32.into()).unwrap();
-        Some(obj)
     }
 
     pub fn set_master_volume(&mut self, volume: f32) {
@@ -430,12 +198,11 @@ impl ZebratronCartridgeSystem {
         self.apu.is_sound_test_mode()
     }
 
-    // Language switching support for internationalization
     pub fn set_language(&mut self, language: u32) {
         let lang = match language {
             0 => Language::English,
             1 => Language::Japanese,
-            _ => Language::English, // Default to English
+            _ => Language::English,
         };
         self.font_system.set_language(lang);
         self.ppu.set_language(lang);
@@ -464,26 +231,14 @@ impl ZebratronCartridgeSystem {
         self.apu.get_current_note() as u32
     }
 
-    pub fn generate_debug_samples(&mut self, count: usize) -> Vec<f32> {
-        // Simplified debug sample generation
-        let mut samples = Vec::new();
-        for _ in 0..count {
-            samples.push(self.apu.generate_sample());
-        }
-        samples
-    }
-
     pub fn generate_audio_sample(&mut self) -> f32 {
         self.apu.generate_sample()
     }
 
-    // Get intro text for display (for Japanese hiragana text)
     pub fn get_intro_text(&self) -> String {
-        if let Some(ref cartridge) = self.hambert_cartridge {
-            cartridge.get_intro_text_display()
-        } else {
-            String::new()
-        }
+        // This might need to be handled differently now
+        // For now, we can't easily get text back from the cartridge
+        String::new()
     }
 
     // Filter controls
@@ -529,80 +284,38 @@ impl ZebratronCartridgeSystem {
         self.apu.get_melody_enabled()
     }
 
-    // CPU state for debugging - simplified for cartridge system
-    pub fn get_cpu_state(&self) -> js_sys::Object {
-        let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"pc".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"a".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"x".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"y".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"sp".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"status".into(), &0u32.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"cycles".into(), &0u32.into()).unwrap();
-        obj
-    }
-
     pub fn get_frame_count(&self) -> u64 {
         self.ppu.get_frame_count()
     }
 
-    // Z-Synth specific methods
+    // Z-Synth and other direct input handlers
     pub fn handle_zsynth_key_down(&mut self, key: char) {
-        if self.current_cartridge_type == 2 {
-            if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                cartridge.handle_key_down(key);
-                // Process audio immediately for responsive playback
-                self.process_cartridge_audio();
-            }
+        if let Some(cart) = &mut self.cartridge {
+            cart.handle_key_down(key);
         }
     }
 
     pub fn handle_zsynth_key_up(&mut self, key: char) {
-        if self.current_cartridge_type == 2 {
-            if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                cartridge.handle_key_up(key);
-                // Process audio immediately for responsive playback
-                self.process_cartridge_audio();
-            }
+        if let Some(cart) = &mut self.cartridge {
+            cart.handle_key_up(key);
         }
     }
 
-    // Get current cartridge type (0=none, 1=hambert, 2=zsynth)
-    pub fn get_current_cartridge_type(&self) -> u8 {
-        self.current_cartridge_type
-    }
-
-    // MIDI handlers for Z-Synth
     pub fn handle_midi_note_on(&mut self, note: u32) {
-        if self.current_cartridge_type == 2 {
-            if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                cartridge.handle_midi_note_on(note);
-                // Process audio immediately for responsive playback
-                self.process_cartridge_audio();
-            }
+        if let Some(cart) = &mut self.cartridge {
+            cart.handle_midi_note_on(note);
         }
     }
 
     pub fn handle_midi_note_off(&mut self, note: u32) {
-        if self.current_cartridge_type == 2 {
-            if let Some(ref mut cartridge) = self.zsynth_cartridge {
-                cartridge.handle_midi_note_off(note);
-                // Process audio immediately for responsive playback
-                self.process_cartridge_audio();
-            }
+        if let Some(cart) = &mut self.cartridge {
+            cart.handle_midi_note_off(note);
         }
     }
 
-    // Get Z-Synth info for display
     pub fn get_zsynth_info(&self) -> String {
-        if let Some(ref cartridge) = self.zsynth_cartridge {
-            format!("Z-Synth Active - KB Notes: {} | MIDI Notes: {} | APU Notes: {}", 
-                cartridge.get_active_note_count(),
-                cartridge.get_active_midi_note_count(),
-                self.apu.get_synth_active_note_count())
-        } else {
-            String::from("Z-Synth not loaded")
-        }
+        // This would need a method on the trait to get info, if desired
+        String::from("Info not available from generic cartridge")
     }
 
     // SID-style 3-voice API delegation to APU

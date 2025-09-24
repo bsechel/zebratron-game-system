@@ -1,6 +1,73 @@
 use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
+// --- NEW GENERIC CARTRIDGE INTERFACE ---
+
+#[derive(Clone)]
+pub enum PpuCommand {
+    SetScroll(f32, f32),
+    AddSprite(SpriteData),
+    ClearSprites,
+    SetMode(PpuMode),
+    SetHudData(HudData),
+}
+
+#[derive(Clone)]
+pub enum ApuCommand {
+    PlaySoundEffect(u32),
+    SynthNoteOn(u32),
+    SynthNoteOff(u32),
+    StopAllAudio,
+}
+
+#[derive(Clone, Default)]
+pub struct SystemBus {
+    pub ppu_commands: Vec<PpuCommand>,
+    pub apu_commands: Vec<ApuCommand>,
+}
+
+#[derive(Default)]
+pub struct GameInput {
+    pub up: bool,
+    pub down: bool,
+    pub left: bool,
+    pub right: bool,
+    pub a: bool,
+    pub b: bool,
+    pub start: bool,
+    pub select: bool,
+}
+
+#[derive(Clone, Copy)]
+pub enum PpuMode {
+    Game,
+    Intro,
+    ZSynth,
+}
+
+#[derive(Clone, Default)]
+pub struct HudData {
+    pub lives: u32,
+    pub is_dying: bool,
+    pub death_flash: bool,
+    pub is_invulnerable: bool,
+    pub invuln_flash: bool,
+    pub intro_text: Option<String>,
+}
+
+// The new generic Cartridge trait
+pub trait Cartridge {
+    fn update(&mut self, input: &GameInput) -> SystemBus;
+    fn reset(&mut self);
+    fn handle_key_down(&mut self, key: char);
+    fn handle_key_up(&mut self, key: char);
+    fn handle_midi_note_on(&mut self, note: u32);
+    fn handle_midi_note_off(&mut self, note: u32);
+}
+
+
+// --- EXISTING STRUCTS AND ENUMS (Preserved) ---
+
 // Sound effect IDs for the Hambert game
 #[derive(Clone, Copy)]
 pub enum SoundEffect {
@@ -13,14 +80,6 @@ pub enum SoundEffect {
     Laughter = 6,
     Gasp = 7,
     Grunt = 8,
-}
-
-// Audio commands that cartridges can send to the console
-pub trait AudioCommands {
-    fn play_sound_effect(&mut self, sound_id: u32);
-    fn play_music(&mut self, music_id: u32);
-    fn stop_music(&mut self);
-    fn set_music_volume(&mut self, volume: f32);
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -97,28 +156,6 @@ impl Entity {
     }
 }
 
-// Cartridge trait - all games must implement this
-pub trait Cartridge {
-    fn init(&mut self) -> Result<(), String>;
-    fn update(&mut self, input: &GameInput) -> Result<(), String>;
-    fn get_sprites(&self) -> &[SpriteData];
-    fn get_camera_pos(&self) -> (f32, f32);
-    fn reset(&mut self);
-}
-
-// Input state passed from the system to cartridge
-#[derive(Default)]
-pub struct GameInput {
-    pub up: bool,
-    pub down: bool,
-    pub left: bool,
-    pub right: bool,
-    pub a: bool,
-    pub b: bool,
-    pub start: bool,
-    pub select: bool,
-}
-
 // Sprite data for rendering - cartridge communicates with PPU through this
 #[derive(Clone)]
 pub struct SpriteData {
@@ -126,6 +163,7 @@ pub struct SpriteData {
     pub y: f32,
     pub sprite_id: u32,
     pub active: bool,
+    pub flip_horizontal: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -153,6 +191,68 @@ pub struct Level {
     pub target_score: u32,
     pub time_limit: Option<u32>, // Optional time limit in seconds
     pub completed: bool,
+}
+
+impl Cartridge for HambertCartridge {
+    fn update(&mut self, input: &GameInput) -> SystemBus {
+        // Run the internal game logic for one frame
+        self.update_game(input.up, input.down, input.left, input.right);
+
+        let mut bus = SystemBus::default();
+
+        // Populate PPU and APU commands based on the game state
+        match self.game_state {
+            GameState::Intro | GameState::Interlude => {
+                bus.ppu_commands.push(PpuCommand::SetMode(PpuMode::Intro));
+                bus.ppu_commands.push(PpuCommand::SetHudData(HudData {
+                    intro_text: Some(self.get_intro_text_display()),
+                    ..Default::default()
+                }));
+            }
+            GameState::Playing | GameState::GameOver => {
+                bus.ppu_commands.push(PpuCommand::SetMode(PpuMode::Game));
+                bus.ppu_commands.push(PpuCommand::ClearSprites);
+                bus.ppu_commands.push(PpuCommand::SetScroll(self.camera_x, self.camera_y));
+
+                for entity in &self.entities {
+                    if entity.active {
+                        bus.ppu_commands.push(PpuCommand::AddSprite(SpriteData {
+                            x: entity.x,
+                            y: entity.y,
+                            sprite_id: entity.sprite_id,
+                            active: entity.active,
+                            flip_horizontal: entity.facing_left,
+                        }));
+                    }
+                }
+
+                bus.ppu_commands.push(PpuCommand::SetHudData(HudData {
+                    lives: self.lives,
+                    is_dying: self.is_player_dying(),
+                    death_flash: self.get_player_death_flash(),
+                    is_invulnerable: self.is_player_invulnerable(),
+                    invuln_flash: self.get_player_invul_flash(),
+                    intro_text: None,
+                }));
+            }
+        }
+
+        // Populate APU commands
+        for sound in self.pending_sounds.drain(..) {
+            bus.apu_commands.push(ApuCommand::PlaySoundEffect(sound as u32));
+        }
+
+        bus
+    }
+
+    fn reset(&mut self) {
+        self.restart_game();
+    }
+
+    fn handle_key_down(&mut self, _key: char) {}
+    fn handle_key_up(&mut self, _key: char) {}
+    fn handle_midi_note_on(&mut self, _note: u32) {}
+    fn handle_midi_note_off(&mut self, _note: u32) {}
 }
 
 // The Hambert cartridge - extracted game logic
@@ -1159,6 +1259,62 @@ pub struct PianoKey {
     pub is_pressed: bool,
     pub keyboard_key: char,  // The ZSXDCVGBHNJM key that triggers this note
     pub note: u32,          // MIDI note number
+}
+
+impl Cartridge for ZSynthCartridge {
+    fn update(&mut self, _input: &GameInput) -> SystemBus {
+        self.update_synth();
+
+        let mut bus = SystemBus::default();
+        bus.ppu_commands.push(PpuCommand::SetMode(PpuMode::ZSynth));
+        bus.ppu_commands.push(PpuCommand::ClearSprites);
+
+        // Add piano keys as sprites
+        for key in &self.piano_keys {
+            let sprite_id = if key.is_black {
+                if key.is_pressed { 13 } else { 12 }
+            } else {
+                if key.is_pressed { 11 } else { 10 }
+            };
+            bus.ppu_commands.push(PpuCommand::AddSprite(SpriteData {
+                x: key.x,
+                y: key.y,
+                sprite_id,
+                active: true,
+                flip_horizontal: false,
+            }));
+        }
+
+        // Populate APU commands
+        for note in self.pending_note_on.drain(..) {
+            bus.apu_commands.push(ApuCommand::SynthNoteOn(note));
+        }
+        for note in self.pending_note_off.drain(..) {
+            bus.apu_commands.push(ApuCommand::SynthNoteOff(note));
+        }
+
+        bus
+    }
+
+    fn reset(&mut self) {
+        // No state to reset for ZSynth
+    }
+
+    fn handle_key_down(&mut self, key: char) {
+        self.handle_key_down(key);
+    }
+
+    fn handle_key_up(&mut self, key: char) {
+        self.handle_key_up(key);
+    }
+
+    fn handle_midi_note_on(&mut self, note: u32) {
+        self.handle_midi_note_on(note);
+    }
+
+    fn handle_midi_note_off(&mut self, note: u32) {
+        self.handle_midi_note_off(note);
+    }
 }
 
 // Z-Synth cartridge - A synthesizer application
