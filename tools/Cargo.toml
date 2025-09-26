@@ -16,3 +16,11 @@ path = "src/png_to_sprite.rs"
 [[bin]]
 name = "wav_to_sample"
 path = "src/wav_to_sample.rs"
+
+[[bin]]
+name = "katakana_converter"
+path = "src/katakana_converter.rs"
+
+[[bin]]
+name = "katakana_test"
+path = "src/katakana_test.rs"

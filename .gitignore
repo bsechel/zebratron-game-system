@@ -53,3 +53,6 @@ SPRITE_REFERENCES/
 
 # Laravel integration documentation
 docs/LARAVEL_INTEGRATION_OPTION*.md
+
+# Random development files and experiments
+proposed_improvements.md

@@ -342,8 +342,8 @@ impl HambertCartridge {
 
         let player = &mut self.entities[self.player_id];
 
-        // Horizontal movement (faster acceleration for responsive walking, slower in air)
-        let acceleration = if player.on_ground { 0.35 } else { 0.175 };  // Half speed in air
+        // Horizontal movement (slow and controlled)
+        let acceleration = if player.on_ground { 0.15 } else { 0.08 };  // Much slower acceleration
         if left {
             player.vel_x -= acceleration;
         }
@@ -353,13 +353,13 @@ impl HambertCartridge {
 
         // Jumping (lower, more controlled jump)
         if up && player.on_ground {
-            player.vel_y = -4.0;  // Reduced from -5.0 for lower jump height
+            player.vel_y = -3.0;  // Lower jump height
             player.on_ground = false;
             self.pending_sounds.push(SoundEffect::Jump);
         }
 
-        // Clamp horizontal velocity (faster max walking speed)
-        player.vel_x = player.vel_x.max(-4.0).min(4.0);  // Increased from 2.8 for faster walking
+        // Clamp horizontal velocity (slower max speed)
+        player.vel_x = player.vel_x.max(-2.0).min(2.0);  // Much slower maximum speed
     }
 
     fn update_physics(&mut self) {
@@ -881,8 +881,8 @@ impl HambertCartridge {
     }
     
     fn get_intro_text_full(&self) -> &'static str {
-        // Japanese adventure message in hiragana: "Let's prepare for an interesting adventure!"
-        "おもしろいぼうけんのじゅんびをしましょう！"
+        // Complete Hambert in katakana: ハ (ha), ン (n), バ (ba), ー (long vowel), ト (to)
+        "ハンバート\nHambert in katakana!"
     }
 
 
