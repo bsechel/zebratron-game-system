@@ -18,6 +18,8 @@ pub struct ZebratronCartridgeSystem {
     running: bool,
     frame_ready: bool,
     last_game_state: u32, // Track game state changes for audio management
+    real_time_seconds: u32,    // Real time in seconds
+    frame_time_seconds: u32,   // Frame-based time in seconds
 }
 
 #[wasm_bindgen]
@@ -36,7 +38,9 @@ impl ZebratronCartridgeSystem {
             current_cartridge_type: 0,
             running: false,
             frame_ready: false,
-            last_game_state: 0, // Start with intro state
+            last_game_state: 0,
+            real_time_seconds: 0,
+            frame_time_seconds: 0, // Start with intro state
         }
     }
 
@@ -366,6 +370,9 @@ impl ZebratronCartridgeSystem {
             );
         }
         
+        // Update PPU with clock data for timing consistency display
+        self.ppu.set_clock_times(self.real_time_seconds, self.frame_time_seconds);
+        
         self.ppu.render();
     }
 
@@ -490,6 +497,15 @@ impl ZebratronCartridgeSystem {
 
     pub fn get_melody_enabled(&self) -> bool {
         self.apu.get_melody_enabled()
+    }
+
+    // Clock controls for timing consistency testing
+    pub fn set_real_time_seconds(&mut self, seconds: u32) {
+        self.real_time_seconds = seconds;
+    }
+
+    pub fn set_frame_time_seconds(&mut self, seconds: u32) {
+        self.frame_time_seconds = seconds;
     }
 
     // CPU state for debugging - simplified for cartridge system

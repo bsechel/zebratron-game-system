@@ -875,4 +875,15 @@ export class ZebratronCartridgeSystem {
     if (!this.wasmSystem) return;
     this.wasmSystem.poly_stop_all();
   }
+
+  // Clock timing methods for consistency testing
+  set_real_time_seconds(seconds: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.set_real_time_seconds(seconds);
+  }
+
+  set_frame_time_seconds(seconds: number): void {
+    if (!this.wasmSystem) return;
+    this.wasmSystem.set_frame_time_seconds(seconds);
+  }
 }

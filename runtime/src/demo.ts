@@ -7,6 +7,9 @@ class Demo {
   private isRunning = false;
   private frameCount = 0;
   private lastTime = 0;
+  private clockSeconds = 0;
+  private lastClockTime = 0;
+  private frameClockSeconds = 0;
   private colorTestPressed = false;
   private soundTestPressed = false;
   private soundTestMode = false;
@@ -70,6 +73,9 @@ class Demo {
     await this.system.initialize(canvas);
 
     this.updateStatus('Ready');
+    // Initialize clock displays
+    this.updateClock(0);
+    this.updateFrameClock(0);
     console.log('ZebratronGameSystem initialized!');
   }
 
@@ -317,6 +323,13 @@ class Demo {
       this.updateFPS(fps);
     }
 
+    // Update time-based clock (should tick consistently)
+    if (currentTime - this.lastClockTime >= 1000) {
+      this.clockSeconds++;
+      this.lastClockTime = currentTime;
+      this.updateClock(this.clockSeconds);
+    }
+
     // Handle input for sprite movement
     const up = this.input.isPressed(Button.Up);
     const down = this.input.isPressed(Button.Down);
@@ -359,13 +372,19 @@ class Demo {
     // Step the system for one frame
     const frameReady = this.system.stepFrame();
     if (frameReady) {
-      this.system.render();
-      this.frameCount++;
-
-      // Debug logging every 60 frames (once per second)
+      // Frame-based clock (assumes 60fps - will be wrong on 120Hz displays!)
       if (this.frameCount % 60 === 0) {
+        this.frameClockSeconds++;
+        this.updateFrameClock(this.frameClockSeconds);
         console.log(`🎮 Frame ${this.frameCount}, System running: ${this.system.isRunning()}`);
       }
+
+      // Update the game engine with current clock times
+      this.system.set_real_time_seconds(this.clockSeconds);
+      this.system.set_frame_time_seconds(this.frameClockSeconds);
+
+      this.system.render();
+      this.frameCount++;
     } else {
       // Debug why frames aren't ready
       if (this.frameCount < 5) {
@@ -391,6 +410,24 @@ class Demo {
     const fpsElement = document.getElementById('frameRate');
     if (fpsElement) {
       fpsElement.textContent = `FPS: ${fps}`;
+    }
+  }
+
+  private updateClock(seconds: number): void {
+    const clockElement = document.getElementById('timeClock');
+    if (clockElement) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      clockElement.textContent = `Time Clock: ${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+  }
+
+  private updateFrameClock(seconds: number): void {
+    const frameClockElement = document.getElementById('frameClock');
+    if (frameClockElement) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      frameClockElement.textContent = `Frame Clock: ${minutes}:${secs.toString().padStart(2, '0')}`;
     }
   }
 

@@ -279,6 +279,10 @@ pub struct Ppu {
     // Frame count
     frame_count: u64,
 
+    // Clock timing data for consistency testing
+    real_time_seconds: u32,
+    frame_time_seconds: u32,
+
     // Sprite data provided by cartridge
     sprites: Vec<SpriteData>,
 
@@ -313,6 +317,8 @@ impl Ppu {
             scanline: 0,
             cycle: 0,
             frame_count: 0,
+            real_time_seconds: 0,
+            frame_time_seconds: 0,
             sprites: Vec::new(),
             color_test_mode: false,
             intro_mode: false,
@@ -382,6 +388,12 @@ impl Ppu {
         self.color_test_mode
     }
 
+    // Clock timing setters for consistency testing
+    pub fn set_clock_times(&mut self, real_time: u32, frame_time: u32) {
+        self.real_time_seconds = real_time;
+        self.frame_time_seconds = frame_time;
+    }
+
     // Intro/interlude screen mode
     pub fn set_intro_mode(&mut self, intro_mode: bool) {
         self.intro_mode = intro_mode;
@@ -449,6 +461,9 @@ impl Ppu {
 
         // Render lives counter
         self.render_lives_counter();
+
+        // Render timing clocks for consistency testing
+        self.render_timing_clocks();
 
         // Debug: Render coordinate display
         self.render_debug_coordinates();
@@ -1195,6 +1210,24 @@ impl Ppu {
             let x = start_x + (i * spacing);
             self.render_pink_heart_text(x as f32, start_y as f32);
         }
+    }
+
+    fn render_timing_clocks(&mut self) {
+        let white = (255, 255, 255);
+        let yellow = (255, 255, 0);
+        
+        // Format time as MM:SS
+        let real_minutes = self.real_time_seconds / 60;
+        let real_seconds = self.real_time_seconds % 60;
+        let frame_minutes = self.frame_time_seconds / 60;
+        let frame_seconds = self.frame_time_seconds % 60;
+        
+        let real_time_text = format!("Real: {}:{:02}", real_minutes, real_seconds);
+        let frame_time_text = format!("Frame: {}:{:02}", frame_minutes, frame_seconds);
+        
+        // Render clocks in top-right corner (moved left to avoid cutoff)
+        self.render_text(&real_time_text, 200, 50, white);
+        self.render_text(&frame_time_text, 200, 70, yellow);
     }
 
     fn render_pink_heart_text(&mut self, x: f32, y: f32) {
