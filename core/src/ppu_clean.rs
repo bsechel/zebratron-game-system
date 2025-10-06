@@ -260,6 +260,16 @@ pub struct SpriteData {
     pub flip_horizontal: bool,
 }
 
+// Sprite with pixel data - for direct rendering
+#[derive(Clone)]
+pub struct SpriteWithData {
+    pub x: f32,
+    pub y: f32,
+    pub pixel_data: [[u8; 16]; 16], // 16x16 sprite with palette indices
+    pub active: bool,
+    pub flip_horizontal: bool,
+}
+
 pub struct Ppu {
     // Screen buffer - RGBA format
     screen_buffer: Vec<u8>,
@@ -282,6 +292,7 @@ pub struct Ppu {
 
     // Sprite data provided by cartridge
     sprites: Vec<SpriteData>,
+    sprites_with_data: Vec<SpriteWithData>,
 
     // Demo mode toggle
     color_test_mode: bool,
@@ -294,6 +305,8 @@ pub struct Ppu {
     intro_text: String,
     // Z-Synth piano mode
     zsynth_mode: bool,
+    // Platformer game mode
+    platformer_mode: bool,
     
     // HUD/UI data
     hud_lives: u8,
@@ -318,11 +331,13 @@ impl Ppu {
             cycle: 0,
             frame_count: 0,
             sprites: Vec::new(),
+            sprites_with_data: Vec::new(),
             color_test_mode: false,
             font_system: FontSystem::new(),
             intro_mode: false,
             intro_text: String::new(),
             zsynth_mode: false,
+            platformer_mode: false,
             hud_lives: 3,
             player_dying: false,
             player_death_flash: false,
@@ -366,6 +381,7 @@ impl Ppu {
     // Sprite management - cartridge provides sprite data
     pub fn clear_sprites(&mut self) {
         self.sprites.clear();
+        self.sprites_with_data.clear();
     }
 
     pub fn add_sprite(&mut self, x: f32, y: f32, sprite_id: u32, active: bool, flip_horizontal: bool) {
@@ -373,6 +389,16 @@ impl Ppu {
             x,
             y,
             sprite_id,
+            active,
+            flip_horizontal,
+        });
+    }
+    
+    pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[[u8; 16]; 16], active: bool, flip_horizontal: bool) {
+        self.sprites_with_data.push(SpriteWithData {
+            x,
+            y,
+            pixel_data: *pixel_data,
             active,
             flip_horizontal,
         });
@@ -400,6 +426,10 @@ impl Ppu {
         self.zsynth_mode = zsynth_mode;
     }
 
+    pub fn set_platformer_mode(&mut self, platformer_mode: bool) {
+        self.platformer_mode = platformer_mode;
+    }
+
     pub fn set_lives(&mut self, lives: u32) {
         self.hud_lives = lives as u8;
     }
@@ -422,6 +452,8 @@ impl Ppu {
             self.render_intro_screen();
         } else if self.zsynth_mode {
             self.render_zsynth_screen();
+        } else if self.platformer_mode {
+            self.render_platformer();
         } else {
             self.render_game();
         }
@@ -456,6 +488,47 @@ impl Ppu {
         self.render_lives_counter();
 
         // Debug: Render coordinate display
+        self.render_debug_coordinates();
+    }
+
+    fn render_platformer(&mut self) {
+        // Clear screen with a different background color (sky)
+        let bg_color = MASTER_PALETTE[65]; // Sky color
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render simple platformer background
+        self.render_platformer_background();
+
+        // Render tiles from the platformer cartridge with scroll offset
+        self.render_platformer_tiles();
+
+        // Render sprites provided by cartridge (player)
+        let sprites = self.sprites.clone();
+        let sprites_with_data = self.sprites_with_data.clone();
+        let scroll_x = self.scroll_x;
+        let scroll_y = self.scroll_y;
+
+        // Render old-style sprites (with sprite_id)
+        for sprite in &sprites {
+            if sprite.active {
+                self.render_platformer_sprite(sprite.x - scroll_x, sprite.y - scroll_y, sprite.sprite_id, sprite.flip_horizontal);
+            }
+        }
+        
+        // Render new-style sprites (with pixel data)
+        for sprite in &sprites_with_data {
+            if sprite.active {
+                self.render_sprite_with_data(sprite.x - scroll_x, sprite.y - scroll_y, &sprite.pixel_data, sprite.flip_horizontal);
+            }
+        }
+
+        // Render simple text
+        self.render_text("PLATFORMER", 10, 10, (255, 255, 255));
         self.render_debug_coordinates();
     }
 
@@ -973,6 +1046,20 @@ impl Ppu {
         self.render_text(&br_text, 250, 230, text_color);
     }
 
+    pub fn render_debug_pixel(&mut self, x: usize, y: usize, color: (u8, u8, u8)) {
+        if x < SCREEN_WIDTH && y < SCREEN_HEIGHT {
+            let pixel_index = (y * SCREEN_WIDTH + x) * 4;
+            if pixel_index + 3 < self.screen_buffer.len() {
+                self.screen_buffer[pixel_index] = color.0;     // R
+                self.screen_buffer[pixel_index + 1] = color.1; // G
+                self.screen_buffer[pixel_index + 2] = color.2; // B
+                self.screen_buffer[pixel_index + 3] = 255;     // A
+                
+                // Debug pixel set successfully
+            }
+        }
+    }
+
     fn render_text(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8)) {
         // Multi-language text rendering using the font system
         let characters = self.font_system.encode_text(text);
@@ -1409,6 +1496,350 @@ impl Ppu {
         let debug_color = MASTER_PALETTE[47]; // Yellow
         self.render_text(&format!("Sprites: {}", self.sprites.len()), 10, 200, debug_color);
         self.render_text(&format!("Frame: {}", self.frame_count), 10, 220, debug_color);
+    }
+
+    fn render_platformer_background(&mut self) {
+        // Simple clouds in sky  
+        let cloud_color = MASTER_PALETTE[63]; // Light gray
+        
+        // Draw simple cloud shapes
+        for cloud_x in [50, 150, 250] {
+            self.render_platformer_cloud(cloud_x, 30);
+        }
+        
+        // Simple sun
+        let sun_color = MASTER_PALETTE[52]; // Yellow
+        for y in 20..35 {
+            for x in 280..295 {
+                if (x as i32 - 287).pow(2) + (y as i32 - 27).pow(2) < 64 { // Circle formula
+                    let idx = (y * SCREEN_WIDTH + x) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        self.screen_buffer[idx] = sun_color.0;
+                        self.screen_buffer[idx + 1] = sun_color.1;
+                        self.screen_buffer[idx + 2] = sun_color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_platformer_cloud(&mut self, center_x: usize, center_y: usize) {
+        let cloud_color = MASTER_PALETTE[63]; // Light gray
+        
+        // Draw a simple cloud shape
+        for y in (center_y.saturating_sub(5))..(center_y + 5) {
+            for x in (center_x.saturating_sub(15))..(center_x + 15) {
+                if y < SCREEN_HEIGHT && x < SCREEN_WIDTH {
+                    let dx = x.saturating_sub(center_x) as i32;
+                    let dy = y.saturating_sub(center_y) as i32;
+                    if dx * dx + dy * dy < 30 { // Cloud shape
+                        let idx = (y * SCREEN_WIDTH + x) * 4;
+                        if idx < self.screen_buffer.len() - 3 {
+                            self.screen_buffer[idx] = cloud_color.0;
+                            self.screen_buffer[idx + 1] = cloud_color.1;
+                            self.screen_buffer[idx + 2] = cloud_color.2;
+                            self.screen_buffer[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_platformer_tiles(&mut self) {
+        // Dynamic tile rendering that handles the expanded 200-tile world
+        let ground_color = MASTER_PALETTE[24]; // Brown
+        let platform_color = MASTER_PALETTE[31]; // Green
+        let pitfall_color = MASTER_PALETTE[5]; // Dark red
+        let passage_color = MASTER_PALETTE[39]; // Sky blue (same as background)
+        let water_color = MASTER_PALETTE[1]; // Blue
+        let swim_through_color = MASTER_PALETTE[17]; // Darker blue
+        
+        // Get scroll offset for camera movement
+        let scroll_x = self.scroll_x;
+        let scroll_y = self.scroll_y;
+        
+        // Calculate which tiles are visible on screen - with proper bounds checking
+        let tile_start_x = ((scroll_x / 16.0).floor().max(0.0) as usize).min(200);
+        let tile_end_x = (((scroll_x + SCREEN_WIDTH as f32) / 16.0).ceil().max(0.0) as usize + 1).min(200);
+        let tile_start_y = ((scroll_y / 16.0).floor().max(0.0) as usize).min(15);
+        let tile_end_y = (((scroll_y + SCREEN_HEIGHT as f32) / 16.0).ceil().max(0.0) as usize + 1).min(15);
+        
+        // Render tiles based on the platformer cartridge pattern
+        // This mirrors the logic from platformer_cartridge.rs
+        for tile_y in tile_start_y..tile_end_y {
+            for tile_x in tile_start_x..tile_end_x {
+                // Additional safety check to prevent any potential overflow
+                if tile_x >= 200 || tile_y >= 15 {
+                    continue;
+                }
+                
+                // Determine tile type based on position (mirrors platformer_cartridge.rs logic)
+                let tile_type = self.get_platformer_tile_type_id(tile_x, tile_y);
+                
+                let color = match tile_type {
+                    0 => continue, // Air - don't render
+                    1 => if tile_y >= 12 { ground_color } else { platform_color }, // Solid
+                    2 => platform_color, // Platform
+                    3 => pitfall_color, // Pitfall
+                    4 => continue, // Passage - render as sky (don't draw tile)
+                    5 => water_color, // Water
+                    6 => swim_through_color, // Swim-through
+                    _ => continue, // Unknown - don't render
+                };
+                
+                self.render_tile_at_with_scroll(tile_x, tile_y, color, scroll_x, scroll_y);
+            }
+        }
+    }
+    
+    // Helper function that returns the actual tile ID from platformer_cartridge.rs logic
+    fn get_platformer_tile_type_id(&self, tile_x: usize, tile_y: usize) -> u8 {
+        // Safety bounds check
+        if tile_x >= 200 || tile_y >= 15 {
+            return 0; // Air
+        }
+        
+        // Check for pitfalls first (these override ground)
+        // Pitfall 1: Early deadly challenge (columns 12-14)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 12 && tile_x < 15 {
+            return 3; // Pitfall
+        }
+        // Pitfall 2: Medium deadly challenge (columns 22-26)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 22 && tile_x < 27 {
+            return 3; // Pitfall
+        }
+        // Passage 1: Canyon passage to underground (columns 85-94)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 85 && tile_x < 95 {
+            return 4; // Passage
+        }
+        // Passage 2: Underground tunnel entrance (columns 106-108)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 106 && tile_x < 109 {
+            return 4; // Passage
+        }
+        // Pitfall 3: Mountain valley pitfall (columns 137-140)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 137 && tile_x < 141 {
+            return 3; // Pitfall
+        }
+        // Pitfall 4: Castle moat (columns 162-167)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 162 && tile_x < 168 {
+            return 3; // Pitfall
+        }
+        // Pitfall 5: Final deadly challenge (columns 185-188)
+        if tile_y >= 12 && tile_y < 15 && tile_x >= 185 && tile_x < 189 {
+            return 3; // Pitfall
+        }
+        
+        // Ground at bottom (rows 12-14, all columns 0-199) - after checking for holes
+        if tile_y >= 12 && tile_y < 15 && tile_x < 200 {
+            return 1; // Solid ground
+        }
+        
+        // All the platform logic from the original function
+        if self.get_platformer_tile_type_legacy(tile_x, tile_y) {
+            return 1; // Solid block/platform
+        }
+        
+        0 // Air
+    }
+    
+    // Legacy function that mirrors the tile layout from platformer_cartridge.rs
+    fn get_platformer_tile_type_legacy(&self, tile_x: usize, tile_y: usize) -> bool {
+        // Safety bounds check
+        if tile_x >= 200 || tile_y >= 15 {
+            return false;
+        }
+        
+        // Ground at bottom (rows 12-14, all columns 0-199)
+        if tile_y >= 12 && tile_y < 15 && tile_x < 200 {
+            return true;
+        }
+        
+        // Section 1: Starting area (0-20)
+        if tile_y == 11 && tile_x < 8 { return true; }
+        if tile_y == 10 && tile_x >= 10 && tile_x < 13 { return true; }
+        if tile_y == 9 && tile_x >= 15 && tile_x < 18 { return true; }
+        
+        // Section 2: Stepping stones area (20-40)
+        if tile_y == 8 && tile_x >= 20 && tile_x < 23 { return true; }
+        if tile_y == 10 && tile_x >= 25 && tile_x < 28 { return true; }
+        if tile_y == 9 && tile_x >= 30 && tile_x < 33 { return true; }
+        if tile_y == 7 && tile_x >= 35 && tile_x < 40 { return true; }
+        
+        // Section 3: Staircase area (40-60)
+        if tile_y == 11 && tile_x == 42 { return true; }
+        if (tile_y == 10 || tile_y == 11) && tile_x == 43 { return true; }
+        if (tile_y >= 9 && tile_y <= 11) && tile_x == 44 { return true; }
+        if (tile_y >= 8 && tile_y <= 11) && tile_x == 45 { return true; }
+        if (tile_y >= 7 && tile_y <= 11) && tile_x == 46 { return true; }
+        if tile_y == 6 && tile_x >= 47 && tile_x < 55 { return true; } // Sky bridge
+        
+        // Section 4: Tower area (60-80)
+        if tile_y >= 5 && tile_y < 12 && tile_x >= 60 && tile_x < 65 { return true; } // Tall tower
+        if tile_y == 8 && tile_x >= 67 && tile_x < 70 { return true; }
+        if tile_y == 10 && tile_x >= 72 && tile_x < 75 { return true; }
+        if tile_y == 7 && tile_x >= 77 && tile_x < 80 { return true; }
+        
+        // Section 5: Canyon area (80-100)
+        if tile_y == 11 && tile_x >= 80 && tile_x < 85 { return true; }
+        if tile_y == 11 && tile_x >= 95 && tile_x < 100 { return true; }
+        
+        // Section 6: Underground area (100-120)
+        if tile_y == 9 && tile_x >= 100 && tile_x < 105 { return true; }
+        if tile_y == 11 && tile_x >= 105 && tile_x < 115 { return true; }
+        if tile_y == 8 && tile_x >= 115 && tile_x < 120 { return true; }
+        
+        // Section 7: Mountain area (120-140)
+        if tile_y == 10 && tile_x >= 120 && tile_x < 125 { return true; }
+        if tile_y == 8 && tile_x >= 125 && tile_x < 130 { return true; }
+        if tile_y == 9 && tile_x >= 130 && tile_x < 135 { return true; }
+        if tile_y == 11 && tile_x >= 135 && tile_x < 140 { return true; }
+        
+        // Section 8: Floating islands (140-160) - More spaced out and higher
+        if tile_y == 7 && tile_x >= 142 && tile_x < 145 { return true; }  // Island 1 (higher)
+        if tile_y == 5 && tile_x >= 149 && tile_x < 152 { return true; }  // Island 2 (much higher, more spacing)
+        if tile_y == 6 && tile_x >= 156 && tile_x < 159 { return true; }  // Island 3 (higher, more spacing)
+        if tile_y == 8 && tile_x >= 163 && tile_x < 166 { return true; }  // Island 4 (higher, more spacing)
+        
+        // Section 9: Castle approach (160-180)
+        if tile_y == 11 && tile_x >= 160 && tile_x < 165 { return true; }
+        if tile_y >= 8 && tile_y < 12 && tile_x >= 165 && tile_x < 170 { return true; } // Castle wall
+        if tile_y == 7 && tile_x >= 170 && tile_x < 175 { return true; }
+        if tile_y == 9 && tile_x >= 175 && tile_x < 180 { return true; }
+        
+        // Section 10: Final area (180-200)
+        if tile_y == 10 && tile_x >= 180 && tile_x < 185 { return true; }
+        if tile_y == 8 && tile_x >= 187 && tile_x < 192 { return true; }
+        if tile_y >= 10 && tile_y < 12 && tile_x >= 194 && tile_x < 200 { return true; }
+        
+        // Decorative elements
+        if (tile_y == 6 && (tile_x == 35 || tile_x == 36)) { return true; }
+        if (tile_y == 5 && (tile_x == 47 || tile_x == 48)) { return true; }
+        if tile_y == 9 && tile_x == 90 { return true; }
+        if (tile_y == 7 && (tile_x == 110 || tile_x == 111)) { return true; }
+        
+        false
+    }
+    
+    fn render_tile_at_with_scroll(&mut self, tile_x: usize, tile_y: usize, color: (u8, u8, u8), scroll_x: f32, scroll_y: f32) {
+        let pixel_x_start = (tile_x * 16) as f32 - scroll_x;
+        let pixel_y_start = (tile_y * 16) as f32 - scroll_y;
+        
+        for dy in 0..16 {
+            for dx in 0..16 {
+                let pixel_x = pixel_x_start + dx as f32;
+                let pixel_y = pixel_y_start + dy as f32;
+                
+                // Only render if pixel is on screen
+                if pixel_x >= 0.0 && pixel_x < SCREEN_WIDTH as f32 && 
+                   pixel_y >= 0.0 && pixel_y < SCREEN_HEIGHT as f32 {
+                    let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+    }
+    
+    fn render_tile_at(&mut self, tile_x: usize, tile_y: usize, color: (u8, u8, u8)) {
+        let pixel_x_start = tile_x * 16;
+        let pixel_y_start = tile_y * 16;
+        
+        for dy in 0..16 {
+            for dx in 0..16 {
+                let pixel_x = pixel_x_start + dx;
+                let pixel_y = pixel_y_start + dy;
+                
+                if pixel_x < SCREEN_WIDTH && pixel_y < SCREEN_HEIGHT {
+                    let idx = (pixel_y * SCREEN_WIDTH + pixel_x) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_platformer_sprite(&mut self, x: f32, y: f32, sprite_id: u32, flip_horizontal: bool) {
+        // Fallback: render a simple square for old-style sprites
+        let player_color = MASTER_PALETTE[47]; // Yellow/Orange
+        let outline_color = MASTER_PALETTE[0]; // Black
+        
+        let sprite_x = x as i32;
+        let sprite_y = y as i32;
+        
+        // Draw player as a simple colored square with black outline
+        for dy in -8..8 {
+            for dx in -8..8 {
+                let pixel_x = sprite_x + dx;
+                let pixel_y = sprite_y + dy;
+                
+                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 && 
+                   pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
+                    let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        // Black outline
+                        if dx.abs() == 7 || dy.abs() == 7 {
+                            self.screen_buffer[idx] = outline_color.0;
+                            self.screen_buffer[idx + 1] = outline_color.1;
+                            self.screen_buffer[idx + 2] = outline_color.2;
+                            self.screen_buffer[idx + 3] = 255;
+                        } else {
+                            // Player color fill
+                            self.screen_buffer[idx] = player_color.0;
+                            self.screen_buffer[idx + 1] = player_color.1;
+                            self.screen_buffer[idx + 2] = player_color.2;
+                            self.screen_buffer[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[[u8; 16]; 16], flip_horizontal: bool) {
+        let sprite_x = x as i32;
+        let sprite_y = y as i32;
+        
+        // Render 16x16 sprite with pixel data from cartridge
+        for (row, sprite_row) in pixel_data.iter().enumerate() {
+            for (col, &palette_index) in sprite_row.iter().enumerate() {
+                // Skip transparent pixels (palette index 0)
+                if palette_index == 0 {
+                    continue;
+                }
+                
+                // Apply horizontal flipping if needed
+                let actual_col = if flip_horizontal {
+                    15 - col // Flip horizontally
+                } else {
+                    col
+                };
+                
+                let pixel_x = sprite_x + actual_col as i32 - 8; // Center the 16x16 sprite
+                let pixel_y = sprite_y + row as i32 - 8;
+                
+                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 && 
+                   pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
+                    let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        let color = MASTER_PALETTE[palette_index as usize];
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_screen_buffer(&self) -> Vec<u8> {

@@ -463,8 +463,8 @@ export class ZebratronCartridgeSystem {
       console.warn('⚠️ MIDI initialization failed (may not be supported):', error);
     }
 
-    // Load the Hambert cartridge and start
-    this.wasmSystem.load_hambert_cartridge();
+    // Load the Platformer cartridge and start
+    this.wasmSystem.load_platformer_cartridge();
     this.wasmSystem.start();
 
     this.isInitialized = true;
@@ -495,7 +495,42 @@ export class ZebratronCartridgeSystem {
       throw new Error('System not initialized');
     }
 
-    this.wasmSystem.start();
+    // Start the WASM system first (most important)
+    console.log('🚀 Starting WASM system...');
+    console.log('WASM system exists:', !!this.wasmSystem);
+    console.log('WASM system type:', typeof this.wasmSystem);
+    
+    if (this.wasmSystem) {
+      console.log('Calling start() method...');
+      this.wasmSystem.start();
+      console.log('✅ WASM system start called');
+      
+      // Check running state
+      const isRunning = this.wasmSystem.is_running();
+      console.log('System running after start():', isRunning);
+      
+      // Check cartridge type
+      const cartridgeType = this.wasmSystem.get_current_cartridge_type();
+      console.log('Current cartridge type:', cartridgeType);
+    } else {
+      console.error('❌ WASM system is null/undefined!');
+    }
+
+    // Start audio playback (requires user interaction) - but don't let it block system startup
+    if (this.audioManager) {
+      try {
+        console.log('🎵 Starting audio playback...');
+        await this.audioManager.start();
+
+        // Make sure the APU is connected to audio output
+        console.log('🔗 Reconnecting APU to audio...');
+        this.audioManager.connectSystem(this.wasmSystem);
+        console.log('✅ Audio started successfully');
+      } catch (error) {
+        console.warn('⚠️ Could not start audio (this is normal on first load):', error);
+        console.log('🎮 System will continue without audio - click Start again to enable audio');
+      }
+    }
   }
 
   stop(): void {
@@ -730,6 +765,14 @@ export class ZebratronCartridgeSystem {
       throw new Error('System not initialized');
     }
     return this.wasmSystem.load_zsynth_cartridge();
+  }
+
+  // Platformer cartridge methods
+  loadPlatformerCartridge(): boolean {
+    if (!this.wasmSystem) {
+      throw new Error('System not initialized');
+    }
+    return this.wasmSystem.load_platformer_cartridge();
   }
 
   handleZSynthKeyDown(key: string): void {
