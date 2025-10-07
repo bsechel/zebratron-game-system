@@ -1,3 +1,6 @@
+// Tileset data - 256 tiles from test_tileset.png
+include!("../../TILESETS/test_tileset_data.rs");
+
 // Real Hambert sprite data - extracted from actual PNG files
 // Generated from hambert_idle.png, hambert_walk1.png, hambert_walk2.png
 
@@ -58,6 +61,52 @@ const HAMBERT_WALK2_SPRITE: [[u8; 16]; 16] = [
     [0,0,0,0,45,45,45,0,0,0,45,22,22,22,0,0],
 ];
 
+// Glowing hexagon projectile - 6×6 small glowing hexagon (255 = transparent)
+const HEXAGON_PROJECTILE_SPRITE: [[u8; 6]; 6] = [
+    [255,20,21,21,20,255],
+    [20,21,22,22,21,20],
+    [21,22,23,23,22,21],
+    [21,22,23,23,22,21],
+    [20,21,22,22,21,20],
+    [255,20,21,21,20,255],
+];
+
+// Hexagnome sprite - 26×32 stone gnome enemy (255 = transparent)
+const HEXAGNOME_SPRITE: [[u8; 26]; 32] = [
+    [255,255,255,255,255,255,255,255,1,3,3,4,4,3,3,255,255,255,255,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,3,255,3,3,4,4,3,3,2,1,255,255,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,1,6,5,2,3,3,3,2,2,2,4,255,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,8,13,7,2,2,2,2,2,4,4,4,3,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,13,11,11,4,2,2,3,4,5,4,4,3,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,11,10,10,9,3,255,2,3,2,2,2,4,5,4,255,255,255,255,255,255],
+    [255,255,255,255,255,9,12,9,3,1,1,1,1,2,1,2,5,4,5,5,3,255,255,255,255,255],
+    [255,255,255,255,255,255,4,1,1,1,1,1,2,2,3,5,6,5,4,5,4,4,255,255,255,255],
+    [255,255,255,255,255,255,255,255,255,255,1,1,2,3,5,5,6,5,4,5,4,3,255,255,255,255],
+    [255,255,255,255,255,255,255,255,255,255,255,1,2,4,5,5,6,4,4,6,5,2,2,255,255,255],
+    [255,255,255,255,255,255,255,255,255,3,1,1,3,4,5,6,6,4,4,5,6,2,2,255,255,255],
+    [255,255,255,255,255,255,255,255,3,1,1,1,3,5,5,6,5,3,4,5,5,3,3,255,255,255],
+    [255,255,255,255,255,255,3,3,3,1,255,1,3,5,5,6,5,3,4,4,5,3,3,255,255,255],
+    [255,3,3,3,3,3,3,3,3,1,2,3,3,4,5,6,3,3,4,4,6,3,2,255,255,255],
+    [255,3,13,13,12,3,3,3,2,3,3,3,4,4,4,4,3,3,4,5,4,1,255,1,255,255],
+    [255,255,3,13,12,3,3,3,3,3,3,3,4,3,3,4,4,4,4,5,5,3,2,1,255,255],
+    [255,255,3,3,3,255,255,3,3,3,3,4,3,2,3,5,4,4,4,5,4,3,5,3,255,255],
+    [255,255,255,255,255,255,3,3,3,3,2,2,1,1,4,5,4,4,4,4,4,4,2,3,3,255],
+    [255,255,255,255,255,2,3,3,2,2,1,1,1,1,2,4,4,4,4,4,4,4,2,2,3,255],
+    [255,255,255,255,255,5,2,2,1,255,1,2,3,3,3,3,4,4,4,4,4,3,2,2,3,255],
+    [255,255,255,255,3,12,12,8,1,2,2,3,4,4,3,3,4,4,4,4,4,3,2,2,3,255],
+    [255,255,255,255,3,13,13,7,3,3,3,4,4,4,3,3,3,4,4,4,3,3,2,3,2,255],
+    [255,255,255,255,3,3,3,3,3,3,3,3,4,5,4,4,4,4,4,3,3,2,2,3,3,255],
+    [255,255,255,255,255,255,255,255,3,3,3,2,3,4,5,5,4,4,3,3,3,2,1,3,255,255],
+    [255,255,255,255,255,255,255,255,3,3,4,3,2,2,3,4,4,3,3,3,3,2,1,3,255,255],
+    [255,255,255,255,255,255,255,4,3,3,4,5,4,3,3,3,4,3,3,3,2,2,3,3,255,255],
+    [255,255,255,255,255,255,255,3,3,3,4,4,4,4,4,3,3,3,3,3,2,2,3,3,255,255],
+    [255,255,255,255,255,255,255,3,3,2,3,4,4,4,4,3,3,3,3,3,2,255,255,255,255,255],
+    [255,255,255,255,255,255,255,255,255,255,3,3,3,3,3,3,3,3,3,3,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,255,255,3,3,3,3,3,2,3,3,3,3,3,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,255,3,3,3,3,3,2,3,3,3,3,3,3,3,255,255,255,255,255],
+    [255,255,255,255,255,255,3,3,3,3,3,3,2,3,3,3,3,3,3,3,3,255,255,255,255,255],
+];
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TileCollisionType {
     None,
@@ -75,6 +124,25 @@ pub enum PlayerState {
     Jumping,
     Falling,
     Swimming,
+}
+
+#[derive(Debug, Clone)]
+pub struct Hexagnome {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub patrol_left: f32,
+    pub patrol_right: f32,
+    pub facing_right: bool,
+    pub shoot_timer: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Projectile {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub active: bool,
 }
 
 pub struct PlatformerCartridge {
@@ -99,144 +167,38 @@ pub struct PlatformerCartridge {
     pending_sounds: Vec<u32>,
     // Large tile map - 200x15 tiles (3200x240 pixels with 16x16 tiles)
     tiles: [[u8; 200]; 15],
+    // Enemies/NPCs
+    hexagnomes: Vec<Hexagnome>,
+    projectiles: Vec<Projectile>,
+    // Background music
+    music_enabled: bool,
+    music_step: usize,
+    music_timer: f32,
+    music_tempo: f32, // Frames per step
 }
 
 impl PlatformerCartridge {
     pub fn new() -> Self {
-        // Create an elaborate level: 0=air, 1=solid block, 2=platform, 3=pitfall (deadly), 4=passage (leads down), 5=water, 6=swim-through
-        let mut tiles = [[0u8; 200]; 15];
-        
-        // Ground at bottom (row 12-14) with varied terrain
-        for row in 12..15 {
-            for col in 0..200 {
-                tiles[row][col] = 1;
-            }
-        }
-        
-        // Create pitfalls and passages in the ground
-        // Pitfall 1: Early deadly challenge (columns 12-14)
-        for row in 12..15 {
-            for col in 12..15 {
-                tiles[row][col] = 3; // Pitfall - kills player
-            }
-        }
-        
-        // Pitfall 2: Medium deadly challenge (columns 22-26)
-        for row in 12..15 {
-            for col in 22..27 {
-                tiles[row][col] = 3; // Pitfall - kills player
-            }
-        }
-        
-        // Passage 1: Canyon passage to underground (columns 85-94)
-        for row in 12..15 {
-            for col in 85..95 {
-                tiles[row][col] = 4; // Passage - leads down with camera follow
-            }
-        }
-        
-        // Passage 2: Underground tunnel entrance (columns 106-108)
-        for row in 12..15 {
-            for col in 106..109 {
-                tiles[row][col] = 4; // Passage - leads to underground area
-            }
-        }
-        
-        // Pitfall 3: Mountain valley pitfall (columns 137-140)
-        for row in 12..15 {
-            for col in 137..141 {
-                tiles[row][col] = 3; // Pitfall - kills player
-            }
-        }
-        
-        // Pitfall 4: Castle moat (columns 162-167)
-        for row in 12..15 {
-            for col in 162..168 {
-                tiles[row][col] = 3; // Pitfall - kills player
-            }
-        }
-        
-        // Pitfall 5: Final deadly challenge (columns 185-188)
-        for row in 12..15 {
-            for col in 185..189 {
-                tiles[row][col] = 3; // Pitfall - kills player
-            }
-        }
-        
-        // Create extensive terrain features across 200 tiles
-        
-        // Section 1: Starting area (0-20)
-        for col in 0..8 { 
-            tiles[11][col] = 1; // Raised starting platform
-        }
-        for col in 10..13 { tiles[10][col] = 1; }   // First jump
-        for col in 15..18 { tiles[9][col] = 1; }    // Higher platform
-        
-        // Section 2: Stepping stones area (20-40)
-        for col in 20..23 { tiles[8][col] = 1; }    // High platform
-        for col in 25..28 { tiles[10][col] = 1; }   // Drop down
-        for col in 30..33 { tiles[9][col] = 1; }    // Back up
-        for col in 35..40 { tiles[7][col] = 1; }    // Very high platform
-        
-        // Section 3: Staircase area (40-60)
-        tiles[11][42] = 1;
-        tiles[10][43] = 1; tiles[11][43] = 1;
-        tiles[9][44] = 1; tiles[10][44] = 1; tiles[11][44] = 1;
-        tiles[8][45] = 1; tiles[9][45] = 1; tiles[10][45] = 1; tiles[11][45] = 1;
-        tiles[7][46] = 1; tiles[8][46] = 1; tiles[9][46] = 1; tiles[10][46] = 1; tiles[11][46] = 1;
-        for col in 47..55 { tiles[6][col] = 1; }    // Sky bridge
-        
-        // Section 4: Tower area (60-80)
-        for col in 60..65 { 
-            for row in 5..12 { tiles[row][col] = 1; } // Tall tower
-        }
-        for col in 67..70 { tiles[8][col] = 1; }    // Platform after tower
-        for col in 72..75 { tiles[10][col] = 1; }   // Lower platform
-        for col in 77..80 { tiles[7][col] = 1; }    // High platform
-        
-        // Section 5: Canyon area (80-100)
-        for col in 80..85 { tiles[11][col] = 1; }   // Edge before canyon
-        // Passage from 85-95 (canyon passage to underground)
-        for col in 95..100 { tiles[11][col] = 1; }  // Other side of canyon
-        
-        // Section 6: Underground area (100-120)
-        for col in 100..105 { tiles[9][col] = 1; }  // Down into tunnel
-        for col in 105..115 { tiles[11][col] = 1; } // Tunnel floor
-        for col in 115..120 { tiles[8][col] = 1; }  // Back up
-        
-        // Section 7: Mountain area (120-140)
-        for col in 120..125 { tiles[10][col] = 1; }
-        for col in 125..130 { tiles[8][col] = 1; }  // Peak
-        for col in 130..135 { tiles[9][col] = 1; }  // Down slope
-        for col in 135..140 { tiles[11][col] = 1; } // Valley floor
-        
-        // Section 8: Floating islands (140-160) - More spaced out and higher
-        for col in 142..145 { tiles[7][col] = 1; }  // Island 1 (higher)
-        for col in 149..152 { tiles[5][col] = 1; }  // Island 2 (much higher, more spacing)
-        for col in 156..159 { tiles[6][col] = 1; }  // Island 3 (higher, more spacing)
-        for col in 163..166 { tiles[8][col] = 1; }  // Island 4 (higher, more spacing)
-        
-        // Section 9: Castle approach (160-180)
-        for col in 160..165 { tiles[11][col] = 1; } // Ground level
-        for col in 165..170 { 
-            for row in 8..12 { tiles[row][col] = 1; } // Castle wall
-        }
-        for col in 170..175 { tiles[7][col] = 1; }  // Castle ramparts
-        for col in 175..180 { tiles[9][col] = 1; }  // Descent from castle
-        
-        // Section 10: Final area (180-200)
-        for col in 180..185 { tiles[10][col] = 1; } // Final platforms
-        for col in 187..192 { tiles[8][col] = 1; }  // Victory platform
-        for col in 194..200 { 
-            for row in 10..12 { tiles[row][col] = 1; } // End area
-        }
-        
-        // Add some decorative elements and smaller platforms
-        tiles[6][35] = 1; tiles[6][36] = 1; // Small floating platform
-        tiles[5][47] = 1; tiles[5][48] = 1; // Tiny high platform
-        tiles[9][90] = 1; // Single block in canyon
-        tiles[7][110] = 1; tiles[7][111] = 1; // Tunnel ceiling decoration
-        
+        // Level imported from Tiled (test_level.tmx)
+        // Tile types: 0=air, 1=solid block, 2=platform (oneway), 3=pitfall (deadly), 4=passage (leads down), 5=water, 6=swim-through
+        let tiles: [[u8; 200]; 15] = [
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ];
+
         Self {
             camera_x: 0.0,
             camera_y: 0.0,
@@ -256,6 +218,33 @@ impl PlatformerCartridge {
             jumping: false,
             pending_sounds: Vec::new(),
             tiles,
+            hexagnomes: vec![
+                Hexagnome {
+                    x: 100.0, y: 192.0, vx: 1.0,
+                    patrol_left: 50.0, patrol_right: 150.0,
+                    facing_right: true, shoot_timer: 0.0
+                },
+                Hexagnome {
+                    x: 400.0, y: 192.0, vx: 1.0,
+                    patrol_left: 350.0, patrol_right: 450.0,
+                    facing_right: true, shoot_timer: 0.0
+                },
+                Hexagnome {
+                    x: 800.0, y: 192.0, vx: 1.0,
+                    patrol_left: 750.0, patrol_right: 850.0,
+                    facing_right: true, shoot_timer: 0.0
+                },
+                Hexagnome {
+                    x: 1200.0, y: 192.0, vx: 1.0,
+                    patrol_left: 1150.0, patrol_right: 1250.0,
+                    facing_right: true, shoot_timer: 0.0
+                },
+            ],
+            projectiles: Vec::new(),
+            music_enabled: true,
+            music_step: 0,
+            music_timer: 0.0,
+            music_tempo: 15.0, // 15 frames per step = 4 steps per second at 60fps
         }
     }
     
@@ -364,6 +353,15 @@ impl PlatformerCartridge {
             self.camera_x = 0.0;
             self.camera_y = 0.0;
         }
+
+        // Update hexagnomes
+        self.update_hexagnomes();
+
+        // Update projectiles
+        self.update_projectiles();
+
+        // Update background music
+        self.update_music();
     }
     
     fn update_physics(&mut self) {
@@ -548,7 +546,36 @@ impl PlatformerCartridge {
             0 // Air outside bounds
         }
     }
-    
+
+    pub fn get_tiles(&self) -> Vec<Vec<u8>> {
+        self.tiles.iter().map(|row| row.to_vec()).collect()
+    }
+
+    pub fn get_tile_pixels(&self, tile_id: u8) -> Option<&[[u8; TILESET_TILE_SIZE]; TILESET_TILE_SIZE]> {
+        if (tile_id as usize) < TILESET_TILE_COUNT {
+            Some(&TILESET_DATA[tile_id as usize])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_tileset(&self) -> Vec<[[u8; 16]; 16]> {
+        TILESET_DATA.to_vec()
+    }
+
+    // Hexagnome enemy/NPC management
+    pub fn get_hexagnomes(&self) -> &[Hexagnome] {
+        &self.hexagnomes
+    }
+
+    pub fn get_hexagnome_sprite() -> &'static [[u8; 26]; 32] {
+        &HEXAGNOME_SPRITE
+    }
+
+    pub fn get_projectile_sprite() -> &'static [[u8; 6]; 6] {
+        &HEXAGON_PROJECTILE_SPRITE
+    }
+
     // Sound effect management
     pub fn get_pending_sounds(&self) -> Vec<u32> {
         self.pending_sounds.clone()
@@ -560,5 +587,88 @@ impl PlatformerCartridge {
     
     fn trigger_sound(&mut self, sound_id: u32) {
         self.pending_sounds.push(sound_id);
+    }
+
+    fn update_hexagnomes(&mut self) {
+        const HEXAGNOME_SPEED: f32 = 1.0;
+        const SHOOT_INTERVAL: f32 = 90.0; // Shoot every 1.5 seconds at 60fps
+
+        for hexagnome in &mut self.hexagnomes {
+            // Move back and forth within patrol range
+            hexagnome.x += hexagnome.vx * HEXAGNOME_SPEED;
+
+            // Check patrol bounds and reverse direction
+            if hexagnome.x <= hexagnome.patrol_left {
+                hexagnome.x = hexagnome.patrol_left;
+                hexagnome.vx = 1.0;
+            } else if hexagnome.x >= hexagnome.patrol_right {
+                hexagnome.x = hexagnome.patrol_right;
+                hexagnome.vx = -1.0;
+            }
+
+            // Face the direction where the player is
+            if self.player_x < hexagnome.x {
+                hexagnome.facing_right = false; // Player is to the left
+            } else {
+                hexagnome.facing_right = true; // Player is to the right
+            }
+
+            // Update shoot timer and spawn projectiles
+            hexagnome.shoot_timer += 1.0;
+            if hexagnome.shoot_timer >= SHOOT_INTERVAL {
+                hexagnome.shoot_timer = 0.0;
+
+                // Spawn projectile toward player
+                let projectile_vx = if hexagnome.facing_right { 3.0 } else { -3.0 };
+                self.projectiles.push(Projectile {
+                    x: hexagnome.x,
+                    y: hexagnome.y,
+                    vx: projectile_vx,
+                    active: true,
+                });
+            }
+        }
+    }
+
+    fn update_projectiles(&mut self) {
+        // Update all projectiles
+        for projectile in &mut self.projectiles {
+            if projectile.active {
+                projectile.x += projectile.vx;
+
+                // Deactivate if off screen (far left or far right)
+                if projectile.x < -50.0 || projectile.x > self.level_width + 50.0 {
+                    projectile.active = false;
+                }
+            }
+        }
+
+        // Remove inactive projectiles
+        self.projectiles.retain(|p| p.active);
+    }
+
+    pub fn get_projectiles(&self) -> &[Projectile] {
+        &self.projectiles
+    }
+
+    fn update_music(&mut self) {
+        if !self.music_enabled {
+            return;
+        }
+
+        self.music_timer += 1.0;
+
+        if self.music_timer >= self.music_tempo {
+            self.music_timer = 0.0;
+            self.music_step = (self.music_step + 1) % 32; // 32-step loop
+        }
+    }
+
+    pub fn get_music_step(&self) -> usize {
+        self.music_step
+    }
+
+    pub fn is_music_enabled(&self) -> bool {
+        self.music_enabled
     }
 }

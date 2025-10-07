@@ -8,6 +8,10 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "convert_tileset"
+path = "../tools/convert_tileset.rs"
+
 [dependencies]
 wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
 js-sys = { workspace = true }

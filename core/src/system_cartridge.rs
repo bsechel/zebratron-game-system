@@ -311,19 +311,55 @@ impl ZebratronCartridgeSystem {
                     // Update PPU scroll position
                     let (camera_x, camera_y) = cartridge.get_camera_position();
                     self.ppu.set_scroll(camera_x, camera_y);
-                    
+
+                    // Pass level tiles to PPU for rendering
+                    let tiles = cartridge.get_tiles();
+                    self.ppu.set_platformer_tiles(tiles);
+
+                    // Pass tileset pixel data to PPU (only needed once, but OK to set every frame)
+                    let tileset = cartridge.get_tileset();
+                    self.ppu.set_platformer_tileset(tileset);
+
                     // Clear existing sprites
                     self.ppu.clear_sprites();
-                    
+
+                    // Add hexagnome sprites
+                    let hexagnomes = cartridge.get_hexagnomes();
+                    for hexagnome in hexagnomes {
+                        let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
+                        let hex_sprite_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
+                        // Flip horizontally when facing right (hexagnome sprite faces left by default)
+                        let flip_horizontal = hexagnome.facing_right;
+                        self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
+                    }
+
+                    // Add projectile sprites
+                    let projectiles = cartridge.get_projectiles();
+                    for projectile in projectiles {
+                        if projectile.active {
+                            let proj_sprite = PlatformerCartridge::get_projectile_sprite();
+                            let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
+                            self.ppu.add_sprite_with_data(projectile.x, projectile.y, &proj_sprite_vec, true, false);
+                        }
+                    }
+
                     // Add player sprite (world position - PPU will apply scroll)
                     let (player_x, player_y) = cartridge.get_player_position();
                     let animation_frame = cartridge.get_animation_frame();
                     let sprite_data = cartridge.get_sprite_data(animation_frame);
                     let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
-                    self.ppu.add_sprite_with_data(player_x, player_y, sprite_data, true, flip_horizontal); // Player sprite with animation
-                    
+                    let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
+                    self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+
                     // Store debug info for after rendering
                     self.debug_animation_frame = animation_frame;
+
+                    // Play background music
+                    if cartridge.is_music_enabled() {
+                        // Lower the music volume so it doesn't overpower sound effects
+                        self.apu.set_sid_volume(0.3); // 30% volume for background music
+                        self.play_platformer_music(cartridge.get_music_step());
+                    }
                 }
             }
             _ => {}
@@ -778,5 +814,75 @@ impl ZebratronCartridgeSystem {
 
     pub fn poly_stop_all(&mut self) {
         self.apu.poly_stop_all();
+    }
+
+    fn play_platformer_music(&mut self, step: usize) {
+        // Simple chip-tune background music for platformer
+        // 32-step loop with bass, melody, harmony, and drums
+
+        // Kick drum - very short blip on beats 1 and 3
+        if step % 8 == 0 {
+            // Very short low frequency blip - 36 (C2) to 24 (C1), pulse wave, 50ms
+            self.apu.play_sound_effect(36, 24, 0, 0.05);
+        }
+
+        // Snare/hi-hat - short high blip on beats 2 and 4
+        if step % 8 == 4 {
+            // Very short high frequency blip - 84 (C6) to 72 (C5), noise-like, 40ms
+            self.apu.play_sound_effect(84, 72, 0, 0.04);
+        }
+
+        // Melody stops - selective stopping for variation
+        // Stop on odd steps EXCEPT before phrase endings (7, 15, 23, 31)
+        let is_phrase_ending = step % 32 == 6 || step % 32 == 14 || step % 32 == 22 || step % 32 == 30;
+        if step % 2 == 1 && !is_phrase_ending {
+            self.apu.sid_voice2_stop();
+        }
+
+        // Bass stops after 2 steps (keeps bass punchy)
+        if step % 4 == 2 {
+            self.apu.sid_voice1_stop();
+        }
+
+        // Harmony holds longer - only stop right before next harmony note
+        if step % 8 == 1 || step % 8 == 5 {
+            self.apu.sid_voice3_stop();
+        }
+
+        // Bass line (voice 1) - plays on every 4th step
+        if step % 4 == 0 {
+            let bass_pattern = [36, 36, 43, 0, 41, 41, 38, 0]; // C2, C2, G2, rest, F2, F2, D2, rest
+            let bass_note = bass_pattern[(step / 4) % 8];
+            if bass_note > 0 {
+                self.apu.sid_voice1_play_note(bass_note, 0); // Pulse wave for bass
+            } else {
+                // Stop on rests
+                self.apu.sid_voice1_stop();
+            }
+        }
+
+        // Melody (voice 2) - plays on every even step
+        if step % 2 == 0 {
+            let melody_pattern = [
+                60, 62, 64, 0,   // C4, D4, E4, rest
+                67, 65, 64, 0,   // G4, F4, E4, rest
+                60, 64, 67, 72,  // C4, E4, G4, C5 (high note holds)
+                67, 0, 60, 0,    // G4, rest, C4, rest
+            ];
+            let melody_note = melody_pattern[(step / 2) % 16];
+            if melody_note > 0 {
+                self.apu.sid_voice2_play_note(melody_note, 1); // Sawtooth for melody
+            } else {
+                // Stop on rests
+                self.apu.sid_voice2_stop();
+            }
+        }
+
+        // Harmony (voice 3) - plays on beats 2 and 4 of each bar (holds longer)
+        if step % 8 == 2 || step % 8 == 6 {
+            let harmony_pattern = [64, 71, 69, 67]; // E4, B4, A4, G4
+            let harmony_note = harmony_pattern[(step / 8) % 4];
+            self.apu.sid_voice3_play_note(harmony_note, 2); // Triangle for harmony
+        }
     }
 }

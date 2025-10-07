@@ -265,7 +265,7 @@ pub struct SpriteData {
 pub struct SpriteWithData {
     pub x: f32,
     pub y: f32,
-    pub pixel_data: [[u8; 16]; 16], // 16x16 sprite with palette indices
+    pub pixel_data: Vec<Vec<u8>>, // Variable-sized sprite with palette indices
     pub active: bool,
     pub flip_horizontal: bool,
 }
@@ -314,6 +314,11 @@ pub struct Ppu {
     player_death_flash: bool,
     player_invulnerable: bool,
     player_invul_flash: bool,
+
+    // Platformer level tiles (from cartridge)
+    platformer_tiles: Option<Vec<Vec<u8>>>,
+    // Platformer tileset pixel data (256 tiles, 16×16 pixels each)
+    platformer_tileset: Option<Vec<[[u8; 16]; 16]>>,
 }
 
 impl Ppu {
@@ -343,6 +348,8 @@ impl Ppu {
             player_death_flash: false,
             player_invulnerable: false,
             player_invul_flash: false,
+            platformer_tiles: None,
+            platformer_tileset: None,
         }
     }
 
@@ -394,11 +401,11 @@ impl Ppu {
         });
     }
     
-    pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[[u8; 16]; 16], active: bool, flip_horizontal: bool) {
+    pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool) {
         self.sprites_with_data.push(SpriteWithData {
             x,
             y,
-            pixel_data: *pixel_data,
+            pixel_data: pixel_data.to_vec(),
             active,
             flip_horizontal,
         });
@@ -428,6 +435,14 @@ impl Ppu {
 
     pub fn set_platformer_mode(&mut self, platformer_mode: bool) {
         self.platformer_mode = platformer_mode;
+    }
+
+    pub fn set_platformer_tiles(&mut self, tiles: Vec<Vec<u8>>) {
+        self.platformer_tiles = Some(tiles);
+    }
+
+    pub fn set_platformer_tileset(&mut self, tileset: Vec<[[u8; 16]; 16]>) {
+        self.platformer_tileset = Some(tileset);
     }
 
     pub fn set_lives(&mut self, lives: u32) {
@@ -1577,9 +1592,25 @@ impl Ppu {
                 
                 // Determine tile type based on position (mirrors platformer_cartridge.rs logic)
                 let tile_type = self.get_platformer_tile_type_id(tile_x, tile_y);
-                
+
+                // Skip air tiles
+                if tile_type == 0 {
+                    continue;
+                }
+
+                // Render with actual tile pixels if tileset is available
+                let should_render_pixels = self.platformer_tileset.is_some()
+                    && (tile_type as usize) < self.platformer_tileset.as_ref().unwrap().len();
+
+                if should_render_pixels {
+                    // Extract tile pixels before calling render (to avoid borrow checker issues)
+                    let tile_pixels = self.platformer_tileset.as_ref().unwrap()[tile_type as usize];
+                    self.render_tile_pixels_with_scroll(tile_x, tile_y, &tile_pixels, scroll_x, scroll_y);
+                    continue;
+                }
+
+                // Fallback to solid colors if tileset not available
                 let color = match tile_type {
-                    0 => continue, // Air - don't render
                     1 => if tile_y >= 12 { ground_color } else { platform_color }, // Solid
                     2 => platform_color, // Platform
                     3 => pitfall_color, // Pitfall
@@ -1588,7 +1619,7 @@ impl Ppu {
                     6 => swim_through_color, // Swim-through
                     _ => continue, // Unknown - don't render
                 };
-                
+
                 self.render_tile_at_with_scroll(tile_x, tile_y, color, scroll_x, scroll_y);
             }
         }
@@ -1600,139 +1631,61 @@ impl Ppu {
         if tile_x >= 200 || tile_y >= 15 {
             return 0; // Air
         }
-        
-        // Check for pitfalls first (these override ground)
-        // Pitfall 1: Early deadly challenge (columns 12-14)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 12 && tile_x < 15 {
-            return 3; // Pitfall
+
+        // If we have tiles from the cartridge, use them
+        if let Some(ref tiles) = self.platformer_tiles {
+            if tile_y < tiles.len() && tile_x < tiles[tile_y].len() {
+                return tiles[tile_y][tile_x];
+            }
         }
-        // Pitfall 2: Medium deadly challenge (columns 22-26)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 22 && tile_x < 27 {
-            return 3; // Pitfall
-        }
-        // Passage 1: Canyon passage to underground (columns 85-94)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 85 && tile_x < 95 {
-            return 4; // Passage
-        }
-        // Passage 2: Underground tunnel entrance (columns 106-108)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 106 && tile_x < 109 {
-            return 4; // Passage
-        }
-        // Pitfall 3: Mountain valley pitfall (columns 137-140)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 137 && tile_x < 141 {
-            return 3; // Pitfall
-        }
-        // Pitfall 4: Castle moat (columns 162-167)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 162 && tile_x < 168 {
-            return 3; // Pitfall
-        }
-        // Pitfall 5: Final deadly challenge (columns 185-188)
-        if tile_y >= 12 && tile_y < 15 && tile_x >= 185 && tile_x < 189 {
-            return 3; // Pitfall
-        }
-        
-        // Ground at bottom (rows 12-14, all columns 0-199) - after checking for holes
-        if tile_y >= 12 && tile_y < 15 && tile_x < 200 {
-            return 1; // Solid ground
-        }
-        
-        // All the platform logic from the original function
-        if self.get_platformer_tile_type_legacy(tile_x, tile_y) {
-            return 1; // Solid block/platform
-        }
-        
-        0 // Air
+
+        // Fallback to air if no tiles available
+        0
     }
-    
-    // Legacy function that mirrors the tile layout from platformer_cartridge.rs
-    fn get_platformer_tile_type_legacy(&self, tile_x: usize, tile_y: usize) -> bool {
-        // Safety bounds check
-        if tile_x >= 200 || tile_y >= 15 {
-            return false;
-        }
-        
-        // Ground at bottom (rows 12-14, all columns 0-199)
-        if tile_y >= 12 && tile_y < 15 && tile_x < 200 {
-            return true;
-        }
-        
-        // Section 1: Starting area (0-20)
-        if tile_y == 11 && tile_x < 8 { return true; }
-        if tile_y == 10 && tile_x >= 10 && tile_x < 13 { return true; }
-        if tile_y == 9 && tile_x >= 15 && tile_x < 18 { return true; }
-        
-        // Section 2: Stepping stones area (20-40)
-        if tile_y == 8 && tile_x >= 20 && tile_x < 23 { return true; }
-        if tile_y == 10 && tile_x >= 25 && tile_x < 28 { return true; }
-        if tile_y == 9 && tile_x >= 30 && tile_x < 33 { return true; }
-        if tile_y == 7 && tile_x >= 35 && tile_x < 40 { return true; }
-        
-        // Section 3: Staircase area (40-60)
-        if tile_y == 11 && tile_x == 42 { return true; }
-        if (tile_y == 10 || tile_y == 11) && tile_x == 43 { return true; }
-        if (tile_y >= 9 && tile_y <= 11) && tile_x == 44 { return true; }
-        if (tile_y >= 8 && tile_y <= 11) && tile_x == 45 { return true; }
-        if (tile_y >= 7 && tile_y <= 11) && tile_x == 46 { return true; }
-        if tile_y == 6 && tile_x >= 47 && tile_x < 55 { return true; } // Sky bridge
-        
-        // Section 4: Tower area (60-80)
-        if tile_y >= 5 && tile_y < 12 && tile_x >= 60 && tile_x < 65 { return true; } // Tall tower
-        if tile_y == 8 && tile_x >= 67 && tile_x < 70 { return true; }
-        if tile_y == 10 && tile_x >= 72 && tile_x < 75 { return true; }
-        if tile_y == 7 && tile_x >= 77 && tile_x < 80 { return true; }
-        
-        // Section 5: Canyon area (80-100)
-        if tile_y == 11 && tile_x >= 80 && tile_x < 85 { return true; }
-        if tile_y == 11 && tile_x >= 95 && tile_x < 100 { return true; }
-        
-        // Section 6: Underground area (100-120)
-        if tile_y == 9 && tile_x >= 100 && tile_x < 105 { return true; }
-        if tile_y == 11 && tile_x >= 105 && tile_x < 115 { return true; }
-        if tile_y == 8 && tile_x >= 115 && tile_x < 120 { return true; }
-        
-        // Section 7: Mountain area (120-140)
-        if tile_y == 10 && tile_x >= 120 && tile_x < 125 { return true; }
-        if tile_y == 8 && tile_x >= 125 && tile_x < 130 { return true; }
-        if tile_y == 9 && tile_x >= 130 && tile_x < 135 { return true; }
-        if tile_y == 11 && tile_x >= 135 && tile_x < 140 { return true; }
-        
-        // Section 8: Floating islands (140-160) - More spaced out and higher
-        if tile_y == 7 && tile_x >= 142 && tile_x < 145 { return true; }  // Island 1 (higher)
-        if tile_y == 5 && tile_x >= 149 && tile_x < 152 { return true; }  // Island 2 (much higher, more spacing)
-        if tile_y == 6 && tile_x >= 156 && tile_x < 159 { return true; }  // Island 3 (higher, more spacing)
-        if tile_y == 8 && tile_x >= 163 && tile_x < 166 { return true; }  // Island 4 (higher, more spacing)
-        
-        // Section 9: Castle approach (160-180)
-        if tile_y == 11 && tile_x >= 160 && tile_x < 165 { return true; }
-        if tile_y >= 8 && tile_y < 12 && tile_x >= 165 && tile_x < 170 { return true; } // Castle wall
-        if tile_y == 7 && tile_x >= 170 && tile_x < 175 { return true; }
-        if tile_y == 9 && tile_x >= 175 && tile_x < 180 { return true; }
-        
-        // Section 10: Final area (180-200)
-        if tile_y == 10 && tile_x >= 180 && tile_x < 185 { return true; }
-        if tile_y == 8 && tile_x >= 187 && tile_x < 192 { return true; }
-        if tile_y >= 10 && tile_y < 12 && tile_x >= 194 && tile_x < 200 { return true; }
-        
-        // Decorative elements
-        if (tile_y == 6 && (tile_x == 35 || tile_x == 36)) { return true; }
-        if (tile_y == 5 && (tile_x == 47 || tile_x == 48)) { return true; }
-        if tile_y == 9 && tile_x == 90 { return true; }
-        if (tile_y == 7 && (tile_x == 110 || tile_x == 111)) { return true; }
-        
-        false
-    }
-    
-    fn render_tile_at_with_scroll(&mut self, tile_x: usize, tile_y: usize, color: (u8, u8, u8), scroll_x: f32, scroll_y: f32) {
+    fn render_tile_pixels_with_scroll(&mut self, tile_x: usize, tile_y: usize, tile_pixels: &[[u8; 16]; 16], scroll_x: f32, scroll_y: f32) {
         let pixel_x_start = (tile_x * 16) as f32 - scroll_x;
         let pixel_y_start = (tile_y * 16) as f32 - scroll_y;
-        
+
         for dy in 0..16 {
             for dx in 0..16 {
                 let pixel_x = pixel_x_start + dx as f32;
                 let pixel_y = pixel_y_start + dy as f32;
-                
+
                 // Only render if pixel is on screen
-                if pixel_x >= 0.0 && pixel_x < SCREEN_WIDTH as f32 && 
+                if pixel_x >= 0.0 && pixel_x < SCREEN_WIDTH as f32 &&
+                   pixel_y >= 0.0 && pixel_y < SCREEN_HEIGHT as f32 {
+                    let palette_index = tile_pixels[dy][dx];
+
+                    // Skip transparent pixels (palette index 255 = transparent from PNG alpha)
+                    if palette_index == 255 {
+                        continue;
+                    }
+
+                    let color = MASTER_PALETTE[palette_index as usize];
+
+                    let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_tile_at_with_scroll(&mut self, tile_x: usize, tile_y: usize, color: (u8, u8, u8), scroll_x: f32, scroll_y: f32) {
+        let pixel_x_start = (tile_x * 16) as f32 - scroll_x;
+        let pixel_y_start = (tile_y * 16) as f32 - scroll_y;
+
+        for dy in 0..16 {
+            for dx in 0..16 {
+                let pixel_x = pixel_x_start + dx as f32;
+                let pixel_y = pixel_y_start + dy as f32;
+
+                // Only render if pixel is on screen
+                if pixel_x >= 0.0 && pixel_x < SCREEN_WIDTH as f32 &&
                    pixel_y >= 0.0 && pixel_y < SCREEN_HEIGHT as f32 {
                     let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
                     if idx < self.screen_buffer.len() - 3 {
@@ -1805,29 +1758,35 @@ impl Ppu {
         }
     }
     
-    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[[u8; 16]; 16], flip_horizontal: bool) {
+    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool) {
+        if pixel_data.is_empty() {
+            return;
+        }
+
         let sprite_x = x as i32;
         let sprite_y = y as i32;
-        
-        // Render 16x16 sprite with pixel data from cartridge
+        let sprite_height = pixel_data.len();
+        let sprite_width = pixel_data[0].len();
+
+        // Render variable-sized sprite with pixel data from cartridge
         for (row, sprite_row) in pixel_data.iter().enumerate() {
             for (col, &palette_index) in sprite_row.iter().enumerate() {
-                // Skip transparent pixels (palette index 0)
-                if palette_index == 0 {
+                // Skip transparent pixels (palette index 0 or 255)
+                if palette_index == 0 || palette_index == 255 {
                     continue;
                 }
-                
+
                 // Apply horizontal flipping if needed
                 let actual_col = if flip_horizontal {
-                    15 - col // Flip horizontally
+                    sprite_width - 1 - col // Flip horizontally
                 } else {
                     col
                 };
-                
-                let pixel_x = sprite_x + actual_col as i32 - 8; // Center the 16x16 sprite
-                let pixel_y = sprite_y + row as i32 - 8;
-                
-                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 && 
+
+                let pixel_x = sprite_x + actual_col as i32 - (sprite_width / 2) as i32; // Center the sprite
+                let pixel_y = sprite_y + row as i32 - (sprite_height / 2) as i32;
+
+                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 &&
                    pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
                     let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
                     if idx < self.screen_buffer.len() - 3 {
