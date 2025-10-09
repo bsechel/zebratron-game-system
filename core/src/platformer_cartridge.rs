@@ -126,6 +126,42 @@ pub enum PlayerState {
     Swimming,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GameState {
+    TitleScreen,
+    Cutscene,
+    Playing,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CutsceneType {
+    Intro,
+    Interlude1,
+    Interlude2,
+    Interlude3,
+    Interlude4,
+    Ending,
+}
+
+#[derive(Debug, Clone)]
+pub struct CutsceneScreen {
+    pub image: [[u8; 64]; 64],
+    pub text_lines: Vec<String>,
+    pub sound_id: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Cutscene {
+    pub cutscene_type: CutsceneType,
+    pub screens: Vec<CutsceneScreen>,
+    pub current_screen: usize,
+    pub text_scroll_offset: f32,
+    pub text_scroll_speed: f32,
+    pub text_char_index: usize,  // Current character being displayed
+    pub text_char_timer: f32,    // Timer for character reveal
+    pub chars_per_frame: f32,    // Speed of typing (0.5 = 2 frames per char, 1.0 = 1 char per frame)
+}
+
 #[derive(Debug, Clone)]
 pub struct Hexagnome {
     pub x: f32,
@@ -146,6 +182,11 @@ pub struct Projectile {
 }
 
 pub struct PlatformerCartridge {
+    game_state: GameState,
+    title_blink_timer: f32, // Timer for blinking "PRESS START"
+    current_cutscene: Option<Cutscene>,
+    current_level: u32,  // Track current level (0-4)
+    previous_input: u8,  // Track previous frame's input for button press detection
     camera_x: f32,
     camera_y: f32,
     player_x: f32,
@@ -200,6 +241,11 @@ impl PlatformerCartridge {
         ];
 
         Self {
+            game_state: GameState::TitleScreen,
+            title_blink_timer: 0.0,
+            current_cutscene: None,
+            current_level: 0,
+            previous_input: 0,
             camera_x: 0.0,
             camera_y: 0.0,
             player_x: 50.0,
@@ -212,7 +258,7 @@ impl PlatformerCartridge {
             animation_timer: 0.0,
             facing_right: true, // Start facing right
             level_width: 3200.0, // 200 tiles * 16 pixels
-            level_height: 240.0, // 15 tiles * 16 pixels  
+            level_height: 240.0, // 15 tiles * 16 pixels
             jump_button_held: false,
             jump_hold_time: 0.0,
             jumping: false,
@@ -249,11 +295,23 @@ impl PlatformerCartridge {
     }
     
     pub fn update(&mut self, input: u8) {
+        // Handle title screen separately
+        if self.game_state == GameState::TitleScreen {
+            self.update_title_screen(input);
+            return;
+        }
+
+        // Handle cutscene separately
+        if self.game_state == GameState::Cutscene {
+            self.update_cutscene(input);
+            return;
+        }
+
         // Simple player movement
         const PLAYER_SPEED: f32 = 4.0;
         const GRAVITY: f32 = 0.5;
         const JUMP_SPEED: f32 = -12.0;
-        
+
         // Handle input
         let left = (input & 0x01) != 0;
         let right = (input & 0x02) != 0;
@@ -671,4 +729,415 @@ impl PlatformerCartridge {
     pub fn is_music_enabled(&self) -> bool {
         self.music_enabled
     }
+
+    fn update_title_screen(&mut self, input: u8) {
+        // Update blink timer for "PRESS START" animation
+        self.title_blink_timer += 1.0;
+
+        // Detect button press edge
+        let a_button_pressed = (input & 0x10) != 0 && (self.previous_input & 0x10) == 0;
+        let b_button_pressed = (input & 0x20) != 0 && (self.previous_input & 0x20) == 0;
+
+        if a_button_pressed || b_button_pressed {
+            // Start intro cutscene before gameplay
+            self.start_cutscene(CutsceneType::Intro);
+        }
+
+        // Store input for next frame
+        self.previous_input = input;
+    }
+
+    fn update_cutscene(&mut self, input: u8) {
+        let mut sound_to_play: Option<u32> = None;
+        let mut advance_screen = false;
+        let mut cutscene_finished = false;
+
+        if let Some(ref mut cutscene) = self.current_cutscene {
+            // Update text scrolling
+            cutscene.text_scroll_offset += cutscene.text_scroll_speed;
+
+            // Update typing effect - reveal characters one at a time
+            let old_char_index = cutscene.text_char_index;
+            cutscene.text_char_timer += cutscene.chars_per_frame;
+            if cutscene.text_char_timer >= 1.0 {
+                cutscene.text_char_timer -= 1.0;
+                cutscene.text_char_index += 1;
+
+                // Play typing sound when a new character appears
+                if cutscene.text_char_index > old_char_index {
+                    if let Some(current_screen) = cutscene.screens.get(cutscene.current_screen) {
+                        // Count total characters to see if we're still in text range
+                        let total_chars: usize = current_screen.text_lines.iter().map(|s| s.len()).sum();
+                        if cutscene.text_char_index <= total_chars {
+                            // Queue text blip sound to play after borrow
+                            sound_to_play = Some(7);
+                        }
+                    }
+                }
+            }
+
+            // Detect button press edge
+            let a_button_pressed = (input & 0x10) != 0 && (self.previous_input & 0x10) == 0;
+            let b_button_pressed = (input & 0x20) != 0 && (self.previous_input & 0x20) == 0;
+
+            if a_button_pressed || b_button_pressed {
+                // Check if advancing to a valid screen or ending cutscene
+                if cutscene.current_screen + 1 < cutscene.screens.len() {
+                    advance_screen = true;
+                    // Queue screen transition sound
+                    if let Some(next_sound_id) = cutscene.screens[cutscene.current_screen + 1].sound_id {
+                        sound_to_play = Some(next_sound_id);
+                    }
+                } else {
+                    // On the last screen - end the cutscene
+                    cutscene_finished = true;
+                }
+            }
+        }
+
+        // Handle screen advancement after borrow is released
+        if advance_screen {
+            if let Some(ref mut cutscene) = self.current_cutscene {
+                cutscene.current_screen += 1;
+                cutscene.text_scroll_offset = 0.0;
+                cutscene.text_char_index = 0;
+                cutscene.text_char_timer = 0.0;
+            }
+        }
+
+        // Handle cutscene end
+        if cutscene_finished {
+            self.current_cutscene = None;
+            self.game_state = GameState::Playing;
+            // Reset player position for new game start
+            self.player_x = 50.0;
+            self.player_y = 180.0;
+        }
+
+        // Play any queued sound
+        if let Some(sound_id) = sound_to_play {
+            self.trigger_sound(sound_id);
+        }
+
+        // Store input for next frame
+        self.previous_input = input;
+    }
+
+    fn start_cutscene(&mut self, cutscene_type: CutsceneType) {
+        let cutscene = match cutscene_type {
+            CutsceneType::Intro => Self::create_intro_cutscene(),
+            CutsceneType::Interlude1 => Self::create_interlude1_cutscene(),
+            CutsceneType::Interlude2 => Self::create_interlude2_cutscene(),
+            CutsceneType::Interlude3 => Self::create_interlude3_cutscene(),
+            CutsceneType::Interlude4 => Self::create_interlude4_cutscene(),
+            CutsceneType::Ending => Self::create_ending_cutscene(),
+        };
+
+        self.current_cutscene = Some(cutscene);
+        self.game_state = GameState::Cutscene;
+    }
+
+    pub fn get_game_state(&self) -> &GameState {
+        &self.game_state
+    }
+
+    pub fn should_show_press_start(&self) -> bool {
+        // Blink "PRESS START" every 30 frames (0.5 seconds at 60fps)
+        (self.title_blink_timer as u32 / 30) % 2 == 0
+    }
+
+    pub fn get_title_logo(&self) -> &[[u8; 80]; 32] {
+        &TITLE_LOGO
+    }
+
+    pub fn get_current_cutscene(&self) -> Option<&Cutscene> {
+        self.current_cutscene.as_ref()
+    }
+
+    // Cutscene creation functions
+    fn create_intro_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "LONG AGO, IN A PEACEFUL FOREST...".to_string(),
+                    "LIVED A BRAVE HAMSTER NAMED HAMBERT.".to_string(),
+                ],
+                sound_id: Some(6), // Laugh sound
+            },
+            CutsceneScreen {
+                image: CUTSCENE_HEXAGNOME,
+                text_lines: vec![
+                    "BUT ONE DAY, THE EVIL HEXAGNOMES".to_string(),
+                    "INVADED THE FOREST!".to_string(),
+                ],
+                sound_id: Some(4), // Enemy sound
+            },
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_HERO,
+                text_lines: vec![
+                    "NOW HAMBERT MUST FIGHT BACK".to_string(),
+                    "AND SAVE HIS HOME!".to_string(),
+                    "".to_string(),
+                    "PRESS START TO BEGIN".to_string(),
+                ],
+                sound_id: Some(0), // Jump sound
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Intro,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,  // 1.5 characters per frame = faster typing
+        }
+    }
+
+    fn create_interlude1_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "LEVEL 1 COMPLETE!".to_string(),
+                    "BUT THE JOURNEY CONTINUES...".to_string(),
+                ],
+                sound_id: Some(3),
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Interlude1,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,
+        }
+    }
+
+    fn create_interlude2_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "LEVEL 2 COMPLETE!".to_string(),
+                    "DEEPER INTO THE FOREST...".to_string(),
+                ],
+                sound_id: Some(3),
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Interlude2,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,
+        }
+    }
+
+    fn create_interlude3_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "LEVEL 3 COMPLETE!".to_string(),
+                    "THE END IS NEAR...".to_string(),
+                ],
+                sound_id: Some(3),
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Interlude3,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,
+        }
+    }
+
+    fn create_interlude4_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "LEVEL 4 COMPLETE!".to_string(),
+                    "PREPARE FOR THE FINAL BATTLE!".to_string(),
+                ],
+                sound_id: Some(3),
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Interlude4,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,
+        }
+    }
+
+    fn create_ending_cutscene() -> Cutscene {
+        let screens = vec![
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_HERO,
+                text_lines: vec![
+                    "THE HEXAGNOMES HAVE BEEN DEFEATED!".to_string(),
+                ],
+                sound_id: Some(6),
+            },
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_FACE,
+                text_lines: vec![
+                    "PEACE RETURNS TO THE FOREST.".to_string(),
+                    "HAMBERT IS THE HERO!".to_string(),
+                ],
+                sound_id: Some(3),
+            },
+            CutsceneScreen {
+                image: CUTSCENE_HAMBERT_HERO,
+                text_lines: vec![
+                    "THANK YOU FOR PLAYING!".to_string(),
+                    "".to_string(),
+                    "THE END".to_string(),
+                ],
+                sound_id: None,
+            },
+        ];
+
+        Cutscene {
+            cutscene_type: CutsceneType::Ending,
+            screens,
+            current_screen: 0,
+            text_scroll_offset: 0.0,
+            text_scroll_speed: 0.5,
+            text_char_index: 0,
+            text_char_timer: 0.0,
+            chars_per_frame: 1.5,
+        }
+    }
 }
+
+// Title screen logo - 80x32 pixels
+// Simple "HAMBERT'S ADVENTURE" style logo
+const TITLE_LOGO: [[u8; 80]; 32] = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,0,0,0,0],
+    [0,0,0,10,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,22,22,22,22,22,8,8,8,8,8,8,8,8,22,22,22,22,22,22,22,22,8,8,8,8,22,22,22,22,22,22,8,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,22,22,22,22,22,8,8,8,8,8,8,8,8,22,22,22,22,22,22,22,22,8,8,8,8,22,22,22,22,22,22,8,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,22,22,22,22,22,8,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,22,22,22,22,8,8,8,22,22,8,8,22,22,8,8,22,22,22,22,22,8,8,8,8,22,22,22,22,22,22,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,22,22,22,22,22,8,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,22,22,22,22,8,8,8,22,22,8,8,22,22,8,8,22,22,22,22,22,8,8,8,8,22,22,22,22,22,22,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,8,8,8,8,8,8,8,22,22,22,22,22,22,8,8,22,22,8,8,8,8,8,8,8,22,22,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,22,22,22,22,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,10,0,0,0,0],
+    [0,0,0,10,8,22,22,8,8,8,8,22,22,8,8,8,8,8,8,8,22,22,22,22,22,22,22,22,8,8,8,8,22,22,8,8,22,22,8,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,8,22,22,22,22,22,22,22,8,10,0,0,0,0],
+    [0,0,0,10,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,10,0,0,0,0],
+    [0,0,0,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+// Cutscene images - 64x64 pixels
+// Simple Hambert face portrait
+const CUTSCENE_HAMBERT_FACE: [[u8; 64]; 64] = {
+    let mut img = [[0u8; 64]; 64];
+    // Simple brown circle for face
+    let center = 32;
+    let radius = 20;
+    let mut y = 0;
+    while y < 64 {
+        let mut x = 0;
+        while x < 64 {
+            let dx = (x as i32 - center as i32).abs();
+            let dy = (y as i32 - center as i32).abs();
+            if dx * dx + dy * dy < radius * radius {
+                img[y][x] = 22; // Brown color
+            }
+            x += 1;
+        }
+        y += 1;
+    }
+    img
+};
+
+// Hexagnome enemy portrait
+const CUTSCENE_HEXAGNOME: [[u8; 64]; 64] = {
+    let mut img = [[0u8; 64]; 64];
+    // Simple gray hexagon shape
+    let center = 32;
+    let size = 18;
+    let mut y = 0;
+    while y < 64 {
+        let mut x = 0;
+        while x < 64 {
+            let dx = (x as i32 - center as i32).abs();
+            let dy = (y as i32 - center as i32).abs();
+            if dx < size && dy < size {
+                img[y][x] = 8; // Gray color
+            }
+            x += 1;
+        }
+        y += 1;
+    }
+    img
+};
+
+// Hambert hero pose
+const CUTSCENE_HAMBERT_HERO: [[u8; 64]; 64] = {
+    let mut img = [[0u8; 64]; 64];
+    // Simple brown circle with "heroic" star
+    let center = 32;
+    let radius = 20;
+    let mut y = 0;
+    while y < 64 {
+        let mut x = 0;
+        while x < 64 {
+            let dx = (x as i32 - center as i32).abs();
+            let dy = (y as i32 - center as i32).abs();
+            if dx * dx + dy * dy < radius * radius {
+                img[y][x] = 22; // Brown color
+            }
+            // Add star in center
+            if (dx < 3 && dy < 8) || (dy < 3 && dx < 8) {
+                img[y][x] = 37; // Yellow star
+            }
+            x += 1;
+        }
+        y += 1;
+    }
+    img
+};

@@ -336,6 +336,8 @@ class Demo {
       const down = this.input.isPressed(Button.Down);
       const left = this.input.isPressed(Button.Left);
       const right = this.input.isPressed(Button.Right);
+      const a = this.input.isPressed(Button.A);
+      const b = this.input.isPressed(Button.B);
 
       // Toggle color test mode with Enter key
       if (this.input.isPressed(Button.Start)) { // Using Start button for demo
@@ -368,7 +370,7 @@ class Demo {
         this.handleSoundTestControls();
       }
 
-      this.system.handleInput(up, down, left, right);
+      this.system.handleInput(up, down, left, right, a, b);
 
       // Step the system for one frame
       const frameReady = this.system.stepFrame();

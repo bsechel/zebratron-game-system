@@ -156,7 +156,7 @@ impl ZebratronCartridgeSystem {
     }
 
     // Update cartridge game logic and sync with PPU
-    pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool) {
+    pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool, a_button: bool, b_button: bool) {
         // Input handling - debug logging removed for performance
         match self.current_cartridge_type {
             1 => {
@@ -177,7 +177,8 @@ impl ZebratronCartridgeSystem {
                     if right { input_byte |= 0x02; }
                     if up { input_byte |= 0x04; }
                     if down { input_byte |= 0x08; }
-                    // A and B buttons are handled separately
+                    if a_button { input_byte |= 0x10; } // A button (bit 4)
+                    if b_button { input_byte |= 0x20; } // B button (bit 5)
                     cartridge.update(input_byte);
                 }
             }
@@ -302,63 +303,113 @@ impl ZebratronCartridgeSystem {
                 self.ppu.set_scroll(0.0, 0.0);
             }
             3 => {
-                // Platformer cartridge - simple game display
-                self.ppu.set_intro_mode(false);
-                self.ppu.set_zsynth_mode(false);
-                self.ppu.set_platformer_mode(true);
-                
+                // Platformer cartridge - check game state
                 if let Some(ref cartridge) = self.platformer_cartridge {
-                    // Update PPU scroll position
-                    let (camera_x, camera_y) = cartridge.get_camera_position();
-                    self.ppu.set_scroll(camera_x, camera_y);
+                    let game_state = cartridge.get_game_state();
+                    let is_title_screen = matches!(game_state, crate::platformer_cartridge::GameState::TitleScreen);
+                    let is_cutscene = matches!(game_state, crate::platformer_cartridge::GameState::Cutscene);
 
-                    // Pass level tiles to PPU for rendering
-                    let tiles = cartridge.get_tiles();
-                    self.ppu.set_platformer_tiles(tiles);
+                    if is_cutscene {
+                        // Cutscene mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
+                        self.ppu.set_title_screen_mode(false);
+                        self.ppu.set_cutscene_mode(true);
 
-                    // Pass tileset pixel data to PPU (only needed once, but OK to set every frame)
-                    let tileset = cartridge.get_tileset();
-                    self.ppu.set_platformer_tileset(tileset);
+                        // Pass cutscene data to PPU
+                        if let Some(cutscene) = cartridge.get_current_cutscene() {
+                            if cutscene.current_screen < cutscene.screens.len() {
+                                let screen = &cutscene.screens[cutscene.current_screen];
 
-                    // Clear existing sprites
-                    self.ppu.clear_sprites();
+                                // Pass image
+                                let image_vec: Vec<Vec<u8>> = screen.image.iter().map(|row| row.to_vec()).collect();
+                                self.ppu.set_cutscene_image(image_vec);
 
-                    // Add hexagnome sprites
-                    let hexagnomes = cartridge.get_hexagnomes();
-                    for hexagnome in hexagnomes {
-                        let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
-                        let hex_sprite_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
-                        // Flip horizontally when facing right (hexagnome sprite faces left by default)
-                        let flip_horizontal = hexagnome.facing_right;
-                        self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
-                    }
+                                // Pass text
+                                self.ppu.set_cutscene_text(screen.text_lines.clone());
 
-                    // Add projectile sprites
-                    let projectiles = cartridge.get_projectiles();
-                    for projectile in projectiles {
-                        if projectile.active {
-                            let proj_sprite = PlatformerCartridge::get_projectile_sprite();
-                            let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
-                            self.ppu.add_sprite_with_data(projectile.x, projectile.y, &proj_sprite_vec, true, false);
+                                // Pass scroll offset
+                                self.ppu.set_cutscene_scroll_offset(cutscene.text_scroll_offset);
+
+                                // Pass character index for typing effect
+                                self.ppu.set_cutscene_char_index(cutscene.text_char_index);
+                            }
                         }
-                    }
+                    } else if is_title_screen {
+                        // Title screen mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
+                        self.ppu.set_title_screen_mode(true);
 
-                    // Add player sprite (world position - PPU will apply scroll)
-                    let (player_x, player_y) = cartridge.get_player_position();
-                    let animation_frame = cartridge.get_animation_frame();
-                    let sprite_data = cartridge.get_sprite_data(animation_frame);
-                    let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
-                    let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
-                    self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+                        // Pass title logo data to PPU
+                        let logo = cartridge.get_title_logo();
+                        let logo_vec: Vec<Vec<u8>> = logo.iter().map(|row| row.to_vec()).collect();
+                        self.ppu.set_title_logo(logo_vec);
 
-                    // Store debug info for after rendering
-                    self.debug_animation_frame = animation_frame;
+                        // Set press start visibility
+                        self.ppu.set_show_press_start(cartridge.should_show_press_start());
+                    } else {
+                        // Gameplay mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(true);
+                        self.ppu.set_title_screen_mode(false);
+                        self.ppu.set_cutscene_mode(false);
 
-                    // Play background music
-                    if cartridge.is_music_enabled() {
-                        // Lower the music volume so it doesn't overpower sound effects
-                        self.apu.set_sid_volume(0.3); // 30% volume for background music
-                        self.play_platformer_music(cartridge.get_music_step());
+                        // Update PPU scroll position
+                        let (camera_x, camera_y) = cartridge.get_camera_position();
+                        self.ppu.set_scroll(camera_x, camera_y);
+
+                        // Pass level tiles to PPU for rendering
+                        let tiles = cartridge.get_tiles();
+                        self.ppu.set_platformer_tiles(tiles);
+
+                        // Pass tileset pixel data to PPU (only needed once, but OK to set every frame)
+                        let tileset = cartridge.get_tileset();
+                        self.ppu.set_platformer_tileset(tileset);
+
+                        // Clear existing sprites
+                        self.ppu.clear_sprites();
+
+                        // Add hexagnome sprites
+                        let hexagnomes = cartridge.get_hexagnomes();
+                        for hexagnome in hexagnomes {
+                            let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
+                            let hex_sprite_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
+                            // Flip horizontally when facing right (hexagnome sprite faces left by default)
+                            let flip_horizontal = hexagnome.facing_right;
+                            self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
+                        }
+
+                        // Add projectile sprites
+                        let projectiles = cartridge.get_projectiles();
+                        for projectile in projectiles {
+                            if projectile.active {
+                                let proj_sprite = PlatformerCartridge::get_projectile_sprite();
+                                let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
+                                self.ppu.add_sprite_with_data(projectile.x, projectile.y, &proj_sprite_vec, true, false);
+                            }
+                        }
+
+                        // Add player sprite (world position - PPU will apply scroll)
+                        let (player_x, player_y) = cartridge.get_player_position();
+                        let animation_frame = cartridge.get_animation_frame();
+                        let sprite_data = cartridge.get_sprite_data(animation_frame);
+                        let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
+                        let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
+                        self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+
+                        // Store debug info for after rendering
+                        self.debug_animation_frame = animation_frame;
+
+                        // Play background music
+                        if cartridge.is_music_enabled() {
+                            // Lower the music volume so it doesn't overpower sound effects
+                            self.apu.set_sid_volume(0.3); // 30% volume for background music
+                            self.play_platformer_music(cartridge.get_music_step());
+                        }
                     }
                 }
             }
@@ -501,8 +552,14 @@ impl ZebratronCartridgeSystem {
             2 => self.play_short_jump_sound(),
             3 => self.play_collect_sound(),
             4 => self.play_enemy_hit_sound(),
+            7 => self.play_text_blip_sound(),  // Text typing blip (like NES RPGs)
             _ => {} // Unknown sound ID
         }
+    }
+
+    fn play_text_blip_sound(&mut self) {
+        // Very short noise burst for text typing - subtle click sound
+        self.apu.play_sound_effect(72, 72, 4, 0.05); // C5, noise waveform, 50ms
     }
 
     pub fn render(&mut self) {

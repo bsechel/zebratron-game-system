@@ -178,7 +178,7 @@ impl Apu {
                 waveform: 0,
                 phase: 0.0,
                 pulse_width: 0.5,
-                volume: 0.7,
+                volume: 0.2,
                 detune: 0.0,
                 lfsr: 0x7FFF,
                 filter: ResonantFilter {

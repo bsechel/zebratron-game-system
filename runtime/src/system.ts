@@ -594,11 +594,11 @@ export class ZebratronCartridgeSystem {
     }
   }
 
-  handleInput(up: boolean, down: boolean, left: boolean, right: boolean): void {
+  handleInput(up: boolean, down: boolean, left: boolean, right: boolean, a_button: boolean = false, b_button: boolean = false): void {
     if (!this.wasmSystem) {
       throw new Error('System not initialized');
     }
-    this.wasmSystem.handle_input(up, down, left, right);
+    this.wasmSystem.handle_input(up, down, left, right, a_button, b_button);
   }
 
   toggleColorTest(): void {

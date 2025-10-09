@@ -307,6 +307,17 @@ pub struct Ppu {
     zsynth_mode: bool,
     // Platformer game mode
     platformer_mode: bool,
+    // Title screen mode
+    title_screen_mode: bool,
+    title_logo: Option<Vec<Vec<u8>>>, // 80x32 title logo
+    show_press_start: bool,
+
+    // Cutscene mode
+    cutscene_mode: bool,
+    cutscene_image: Option<Vec<Vec<u8>>>, // 64x64 cutscene image
+    cutscene_text: Vec<String>, // Text lines for cutscene
+    cutscene_scroll_offset: f32, // Text scroll offset
+    cutscene_char_index: usize, // Current character to display (for typing effect)
     
     // HUD/UI data
     hud_lives: u8,
@@ -343,6 +354,14 @@ impl Ppu {
             intro_text: String::new(),
             zsynth_mode: false,
             platformer_mode: false,
+            title_screen_mode: false,
+            title_logo: None,
+            show_press_start: false,
+            cutscene_mode: false,
+            cutscene_image: None,
+            cutscene_text: Vec::new(),
+            cutscene_scroll_offset: 0.0,
+            cutscene_char_index: 0,
             hud_lives: 3,
             player_dying: false,
             player_death_flash: false,
@@ -445,6 +464,38 @@ impl Ppu {
         self.platformer_tileset = Some(tileset);
     }
 
+    pub fn set_title_screen_mode(&mut self, title_screen_mode: bool) {
+        self.title_screen_mode = title_screen_mode;
+    }
+
+    pub fn set_title_logo(&mut self, logo: Vec<Vec<u8>>) {
+        self.title_logo = Some(logo);
+    }
+
+    pub fn set_show_press_start(&mut self, show: bool) {
+        self.show_press_start = show;
+    }
+
+    pub fn set_cutscene_mode(&mut self, cutscene_mode: bool) {
+        self.cutscene_mode = cutscene_mode;
+    }
+
+    pub fn set_cutscene_image(&mut self, image: Vec<Vec<u8>>) {
+        self.cutscene_image = Some(image);
+    }
+
+    pub fn set_cutscene_text(&mut self, text: Vec<String>) {
+        self.cutscene_text = text;
+    }
+
+    pub fn set_cutscene_scroll_offset(&mut self, offset: f32) {
+        self.cutscene_scroll_offset = offset;
+    }
+
+    pub fn set_cutscene_char_index(&mut self, index: usize) {
+        self.cutscene_char_index = index;
+    }
+
     pub fn set_lives(&mut self, lives: u32) {
         self.hud_lives = lives as u8;
     }
@@ -467,6 +518,10 @@ impl Ppu {
             self.render_intro_screen();
         } else if self.zsynth_mode {
             self.render_zsynth_screen();
+        } else if self.cutscene_mode {
+            self.render_cutscene();
+        } else if self.title_screen_mode {
+            self.render_title_screen();
         } else if self.platformer_mode {
             self.render_platformer();
         } else {
@@ -1078,12 +1133,20 @@ impl Ppu {
     fn render_text(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8)) {
         // Multi-language text rendering using the font system
         let characters = self.font_system.encode_text(text);
-        
+
         for (i, character) in characters.iter().enumerate() {
             if let Some(font_data) = get_font_data(character.glyph_index) {
                 self.render_char_data(font_data, x + i * 8, y, color);
             }
         }
+    }
+
+    // Reusable typing effect - renders text character by character
+    // Use this for cutscenes, dialogue boxes, menus, etc.
+    fn render_text_typing(&mut self, text: &str, x: usize, y: usize, color: (u8, u8, u8), chars_visible: usize) {
+        // Only show characters up to chars_visible
+        let display_text: String = text.chars().take(chars_visible).collect();
+        self.render_text(&display_text, x, y, color);
     }
 
     // Set the language for text rendering
@@ -1511,6 +1574,127 @@ impl Ppu {
         let debug_color = MASTER_PALETTE[47]; // Yellow
         self.render_text(&format!("Sprites: {}", self.sprites.len()), 10, 200, debug_color);
         self.render_text(&format!("Frame: {}", self.frame_count), 10, 220, debug_color);
+    }
+
+    fn render_title_screen(&mut self) {
+        // Clear screen with dark blue background (like classic NES/Master System title screens)
+        let bg_color = MASTER_PALETTE[82]; // Dark blue
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render title logo if available
+        if let Some(ref logo) = self.title_logo {
+            let logo_x = (SCREEN_WIDTH - 80) / 2; // Center the 80px wide logo
+            let logo_y = 60; // Position near top
+
+            for (y, row) in logo.iter().enumerate() {
+                for (x, &palette_idx) in row.iter().enumerate() {
+                    if palette_idx != 0 { // 0 = transparent
+                        let screen_x = logo_x + x;
+                        let screen_y = logo_y + y;
+
+                        if screen_x < SCREEN_WIDTH && screen_y < SCREEN_HEIGHT {
+                            let color = MASTER_PALETTE[palette_idx as usize];
+                            let idx = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                            self.screen_buffer[idx] = color.0;
+                            self.screen_buffer[idx + 1] = color.1;
+                            self.screen_buffer[idx + 2] = color.2;
+                            self.screen_buffer[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render "PRESS START" text if should be shown (blinking animation)
+        if self.show_press_start {
+            let press_start_color = MASTER_PALETTE[37]; // Bright yellow
+            self.render_text("PRESS START", 110, 170, press_start_color);
+        }
+
+        // Add copyright/credit text
+        let credit_color = MASTER_PALETTE[13]; // Light gray
+        self.render_small_text("(C) 2025", 130, 220, credit_color);
+    }
+
+    fn render_cutscene(&mut self) {
+        // Clear screen with black background
+        let bg_color = MASTER_PALETTE[0]; // Black
+        for i in (0..self.screen_buffer.len()).step_by(4) {
+            self.screen_buffer[i] = bg_color.0;     // R
+            self.screen_buffer[i + 1] = bg_color.1; // G
+            self.screen_buffer[i + 2] = bg_color.2; // B
+            self.screen_buffer[i + 3] = 255;        // A
+        }
+
+        // Render cutscene image if available (centered at top)
+        if let Some(ref image) = self.cutscene_image {
+            let img_x = (SCREEN_WIDTH - 64) / 2; // Center the 64px wide image
+            let img_y = 30; // Position near top
+
+            for (y, row) in image.iter().enumerate() {
+                for (x, &palette_idx) in row.iter().enumerate() {
+                    if palette_idx != 0 { // 0 = transparent
+                        let screen_x = img_x + x;
+                        let screen_y = img_y + y;
+
+                        if screen_x < SCREEN_WIDTH && screen_y < SCREEN_HEIGHT {
+                            let color = MASTER_PALETTE[palette_idx as usize];
+                            let idx = (screen_y * SCREEN_WIDTH + screen_x) * 4;
+                            self.screen_buffer[idx] = color.0;
+                            self.screen_buffer[idx + 1] = color.1;
+                            self.screen_buffer[idx + 2] = color.2;
+                            self.screen_buffer[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render text lines with typing effect
+        let text_color = MASTER_PALETTE[15]; // White
+        let start_y = 130; // Start below image
+        let line_height = 12;
+
+        // Clone text lines to avoid borrow conflict
+        let text_lines = self.cutscene_text.clone();
+        let char_index = self.cutscene_char_index;
+
+        // Track how many characters we've processed across all lines
+        let mut chars_processed = 0;
+        for (i, line) in text_lines.iter().enumerate() {
+            let y = start_y + (i * line_height) as usize;
+
+            // Calculate how many characters of this line to show
+            let chars_to_show = if char_index > chars_processed {
+                (char_index - chars_processed).min(line.len())
+            } else {
+                0
+            };
+
+            if chars_to_show > 0 && y < SCREEN_HEIGHT {
+                // Center the text (using full line width for consistent positioning)
+                let text_width = line.len() * 8;
+                let x = if text_width < SCREEN_WIDTH {
+                    (SCREEN_WIDTH - text_width) / 2
+                } else {
+                    10
+                };
+
+                // Use the reusable typing effect function
+                self.render_text_typing(line, x, y, text_color, chars_to_show);
+            }
+
+            chars_processed += line.len();
+        }
+
+        // Add "PRESS BUTTON" prompt at bottom
+        let prompt_color = MASTER_PALETTE[37]; // Yellow
+        self.render_small_text("PRESS ANY BUTTON", 100, 215, prompt_color);
     }
 
     fn render_platformer_background(&mut self) {
