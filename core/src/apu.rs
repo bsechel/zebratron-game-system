@@ -107,6 +107,9 @@ struct DigitalOscillator {
     lfsr: u16,          // For noise generation
     filter: ResonantFilter, // SID-style resonant filter
     delay: DigitalDelay,    // Digital delay effect
+    vibrato_phase: f32,     // LFO phase for vibrato
+    vibrato_depth: f32,     // Vibrato intensity (0.0 = off)
+    vibrato_rate: f32,      // Vibrato speed in Hz
 }
 
 #[derive(Clone)]
@@ -178,7 +181,7 @@ impl Apu {
                 waveform: 0,
                 phase: 0.0,
                 pulse_width: 0.5,
-                volume: 0.7,
+                volume: 0.2,
                 detune: 0.0,
                 lfsr: 0x7FFF,
                 filter: ResonantFilter {
@@ -209,6 +212,9 @@ impl Apu {
 
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.0,
+                vibrato_rate: 5.0,
             },
             master_volume: 0.5,
             sample_rate: 44100.0,
@@ -271,6 +277,9 @@ impl Apu {
                     read_pos: 0,
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.0,
+                vibrato_rate: 5.0,
             },
 
             // Initialize polyphonic synthesizer
@@ -304,16 +313,19 @@ impl Apu {
                     b1: 0.0, b2: 0.0,
                 },
                 delay: DigitalDelay {
-                    enabled: false,
-                    delay_time: 0.3,
-                    feedback: 0.4,
-                    mix: 0.2,
+                    enabled: true,        // Enable delay on bass
+                    delay_time: 0.375,    // Eighth note delay at 80 BPM (375ms)
+                    feedback: 0.5,        // 50% feedback for clear repeats
+                    mix: 0.5,             // 50% wet signal for more audible delay
                     buffer: vec![0.0; 44100],
                     buffer_size: 44100,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.0,  // No vibrato on bass
+                vibrato_rate: 5.0,
             },
             sid_voice2: DigitalOscillator {
                 enabled: false,
@@ -345,6 +357,9 @@ impl Apu {
                     read_pos: 0,
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.005,  // Subtle vibrato (0.5% pitch variation)
+                vibrato_rate: 3.0,     // 3 Hz vibrato (slower, more gentle)
             },
             sid_voice3: DigitalOscillator {
                 enabled: false,
@@ -376,6 +391,9 @@ impl Apu {
                     read_pos: 0,
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.0,  // No vibrato on voice3
+                vibrato_rate: 5.0,
             },
             sid_enabled: false,
             sid_volume: 0.8,
@@ -727,27 +745,64 @@ impl Apu {
         (dry + wet).clamp(-1.5, 1.5)
     }
 
+    // PolyBLEP (Polynomial Band-Limited Step) for anti-aliasing
+    // Reduces aliasing artifacts in discontinuous waveforms
+    fn poly_blep(t: f32, dt: f32) -> f32 {
+        if t < dt {
+            let t = t / dt;
+            2.0 * t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            let t = (t - 1.0) / dt;
+            t * t + 2.0 * t + 1.0
+        } else {
+            0.0
+        }
+    }
+
     fn generate_digital_oscillator_sample(osc: &mut DigitalOscillator, sample_rate: f32) -> f32 {
-        let effective_freq = osc.frequency * (1.0 + osc.detune);
-        osc.phase += effective_freq / sample_rate;
+        // Update vibrato LFO
+        osc.vibrato_phase += osc.vibrato_rate / sample_rate;
+        if osc.vibrato_phase >= 1.0 {
+            osc.vibrato_phase -= 1.0;
+        }
+
+        // Calculate vibrato modulation (sine wave LFO)
+        let vibrato_mod = if osc.vibrato_depth > 0.0 {
+            (osc.vibrato_phase * 2.0 * PI).sin() * osc.vibrato_depth
+        } else {
+            0.0
+        };
+
+        // Apply vibrato and detune to frequency
+        let effective_freq = osc.frequency * (1.0 + osc.detune + vibrato_mod);
+        let phase_increment = effective_freq / sample_rate;
+        osc.phase += phase_increment;
 
         // Keep phase in 0.0 to 1.0 range
         while osc.phase >= 1.0 {
             osc.phase -= 1.0;
         }
 
-        // Generate raw waveform
+        // Generate raw waveform with PolyBLEP anti-aliasing ENABLED
         let raw_sample = match osc.waveform {
             0 => {
-                // Pulse wave (square with variable pulse width)
-                if osc.phase < osc.pulse_width { 1.0 } else { -1.0 }
+                // Pulse wave (square with variable pulse width) with PolyBLEP
+                let mut sample = if osc.phase < osc.pulse_width { 1.0 } else { -1.0 };
+
+                // Apply PolyBLEP at discontinuities
+                sample += Self::poly_blep(osc.phase, phase_increment);
+                sample -= Self::poly_blep((osc.phase + (1.0 - osc.pulse_width)) % 1.0, phase_increment);
+
+                sample
             },
             1 => {
-                // Sawtooth wave
-                2.0 * osc.phase - 1.0
+                // Sawtooth wave with PolyBLEP
+                let mut sample = 2.0 * osc.phase - 1.0;
+                sample -= Self::poly_blep(osc.phase, phase_increment);
+                sample
             },
             2 => {
-                // Triangle wave
+                // Triangle wave (naturally band-limited, no PolyBLEP needed)
                 if osc.phase < 0.5 {
                     4.0 * osc.phase - 1.0
                 } else {
@@ -755,11 +810,11 @@ impl Apu {
                 }
             },
             3 => {
-                // Sine wave
+                // Sine wave (naturally band-limited)
                 (osc.phase * 2.0 * PI).sin()
             },
             4 => {
-                // Digital noise (LFSR)
+                // Digital noise (LFSR) - intentionally aliased for retro character
                 let feedback = ((osc.lfsr & 1) ^ ((osc.lfsr >> 1) & 1)) != 0;
                 osc.lfsr >>= 1;
                 if feedback {
@@ -1150,8 +1205,11 @@ impl Apu {
                     read_pos: 0,
                     feedback_filter: 0.0,
                 },
+                vibrato_phase: 0.0,
+                vibrato_depth: 0.0,
+                vibrato_rate: 5.0,
             };
-            
+
             // Calculate filter coefficients for the new oscillator
             Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
             
@@ -1276,12 +1334,22 @@ impl Apu {
     pub fn set_sid_volume(&mut self, volume: f32) {
         self.sid_volume = volume.clamp(0.0, 1.0);
     }
-    
+
     #[wasm_bindgen]
     pub fn set_poly_volume(&mut self, volume: f32) {
         self.poly_volume = volume.clamp(0.0, 1.0);
     }
-    
+
+    #[wasm_bindgen]
+    pub fn set_sid_voice2_volume(&mut self, volume: f32) {
+        self.sid_voice2.volume = volume.clamp(0.0, 1.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn set_sid_voice3_volume(&mut self, volume: f32) {
+        self.sid_voice3.volume = volume.clamp(0.0, 1.0);
+    }
+
     // SID filter control (affects all 3 voices like real SID)
     #[wasm_bindgen]
     pub fn sid_set_filter_voices(&mut self, voice1: bool, voice2: bool, voice3: bool) {

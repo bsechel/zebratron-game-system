@@ -4,6 +4,7 @@ use crate::ppu_clean::Ppu;
 use crate::apu::Apu;
 use crate::memory::Memory;
 use crate::cartridge::{HambertCartridge, ZSynthCartridge};
+use crate::platformer_cartridge::PlatformerCartridge;
 use crate::font_system::{FontSystem, Language};
 use crate::utils;
 
@@ -15,11 +16,13 @@ pub struct ZebratronCartridgeSystem {
     memory: Memory,
     hambert_cartridge: Option<HambertCartridge>,
     zsynth_cartridge: Option<ZSynthCartridge>,
-    current_cartridge_type: u8, // 0=none, 1=hambert, 2=zsynth
+    platformer_cartridge: Option<PlatformerCartridge>,
+    current_cartridge_type: u8, // 0=none, 1=hambert, 2=zsynth, 3=platformer
     running: bool,
     frame_ready: bool,
     last_game_state: u32, // Track game state changes for audio management
     font_system: FontSystem, // Internationalization support
+    debug_animation_frame: u32, // For debug indicator
 }
 
 #[wasm_bindgen]
@@ -35,11 +38,13 @@ impl ZebratronCartridgeSystem {
             memory: Memory::new(),
             hambert_cartridge: None,
             zsynth_cartridge: None,
+            platformer_cartridge: None,
             current_cartridge_type: 0,
             running: false,
             frame_ready: false,
             last_game_state: 0, // Start with intro state
             font_system: FontSystem::new(), // Initialize font system with English
+            debug_animation_frame: 0,
         };
         
         // Set to Japanese language for hiragana text
@@ -52,6 +57,7 @@ impl ZebratronCartridgeSystem {
         let hambert = HambertCartridge::new();
         self.hambert_cartridge = Some(hambert);
         self.zsynth_cartridge = None;
+        self.platformer_cartridge = None;
         self.current_cartridge_type = 1;
         self.reset();
         true
@@ -62,9 +68,30 @@ impl ZebratronCartridgeSystem {
         let zsynth = ZSynthCartridge::new();
         self.zsynth_cartridge = Some(zsynth);
         self.hambert_cartridge = None;
+        self.platformer_cartridge = None;
         self.current_cartridge_type = 2;
         self.reset();
         true
+    }
+
+    pub fn load_platformer_cartridge(&mut self) -> bool {
+        let platformer = PlatformerCartridge::new();
+        self.platformer_cartridge = Some(platformer);
+        self.hambert_cartridge = None;
+        self.zsynth_cartridge = None;
+        self.current_cartridge_type = 3;
+        self.reset();
+        true
+    }
+
+    pub fn skip_to_gameplay(&mut self) {
+        if let Some(ref mut platformer) = self.platformer_cartridge {
+            platformer.skip_to_gameplay();
+        }
+        // Clear PPU cutscene/title state
+        self.ppu.set_cutscene_mode(false);
+        self.ppu.set_platformer_mode(true);
+        self.ppu.set_title_screen_mode(false);
     }
 
     pub fn reset(&mut self) {
@@ -74,6 +101,12 @@ impl ZebratronCartridgeSystem {
     }
 
     pub fn start(&mut self) {
+        // Auto-load Platformer cartridge if no cartridge is loaded BEFORE setting running=true
+        if self.current_cartridge_type == 0 {
+            self.load_platformer_cartridge();
+        }
+        
+        // Set running=true AFTER loading cartridge (so reset() doesn't override it)
         self.running = true;
     }
 
@@ -102,6 +135,7 @@ impl ZebratronCartridgeSystem {
                 self.frame_ready = true;
 
                 // Update cartridge game logic every frame
+                // Removed noisy debug logging
                 match self.current_cartridge_type {
                     1 => {
                         if let Some(ref mut cartridge) = self.hambert_cartridge {
@@ -112,6 +146,10 @@ impl ZebratronCartridgeSystem {
                         if let Some(ref mut cartridge) = self.zsynth_cartridge {
                             cartridge.update_synth(); // Z-Synth doesn't use regular input here
                         }
+                    }
+                    3 => {
+                        // Platformer cartridge handles both frame updates and input in one call
+                        // No separate update needed here - handled in input section
                     }
                     _ => {}
                 }
@@ -128,7 +166,8 @@ impl ZebratronCartridgeSystem {
     }
 
     // Update cartridge game logic and sync with PPU
-    pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool) {
+    pub fn handle_input(&mut self, up: bool, down: bool, left: bool, right: bool, a_button: bool, b_button: bool) {
+        // Input handling - debug logging removed for performance
         match self.current_cartridge_type {
             1 => {
                 if let Some(ref mut cartridge) = self.hambert_cartridge {
@@ -139,6 +178,19 @@ impl ZebratronCartridgeSystem {
             2 => {
                 // Z-Synth doesn't use directional input
                 // Key input is handled separately via handle_zsynth_key methods
+            }
+            3 => {
+                if let Some(ref mut cartridge) = self.platformer_cartridge {
+                    // Convert bool inputs to u8 bit flags
+                    let mut input_byte = 0u8;
+                    if left { input_byte |= 0x01; }
+                    if right { input_byte |= 0x02; }
+                    if up { input_byte |= 0x04; }
+                    if down { input_byte |= 0x08; }
+                    if a_button { input_byte |= 0x10; } // A button (bit 4)
+                    if b_button { input_byte |= 0x20; } // B button (bit 5)
+                    cartridge.update(input_byte);
+                }
             }
             _ => {}
         }
@@ -161,6 +213,7 @@ impl ZebratronCartridgeSystem {
                     if game_state == 0 || game_state == 2 { // Intro or Interlude
                         self.ppu.set_intro_mode(true);
                         self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
                         let intro_text = cartridge.get_intro_text_display();
                         self.ppu.set_intro_text(intro_text);
                         // Reset scroll for intro screen
@@ -168,6 +221,7 @@ impl ZebratronCartridgeSystem {
                     } else { // Playing
                         self.ppu.set_intro_mode(false);
                         self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
 
                         // Update PPU scroll position based on cartridge camera
                         let camera_x = cartridge.get_camera_x();
@@ -216,6 +270,7 @@ impl ZebratronCartridgeSystem {
                 // Z-Synth cartridge - piano keyboard display mode
                 self.ppu.set_intro_mode(false);
                 self.ppu.set_zsynth_mode(true);
+                self.ppu.set_platformer_mode(false);
                 
                 if let Some(ref cartridge) = self.zsynth_cartridge {
                     // Clear existing sprites
@@ -256,6 +311,152 @@ impl ZebratronCartridgeSystem {
                 }
                 
                 self.ppu.set_scroll(0.0, 0.0);
+            }
+            3 => {
+                // Platformer cartridge - check game state
+                if let Some(ref cartridge) = self.platformer_cartridge {
+                    let game_state = cartridge.get_game_state();
+                    let is_title_screen = matches!(game_state, crate::platformer_cartridge::GameState::TitleScreen);
+                    let is_cutscene = matches!(game_state, crate::platformer_cartridge::GameState::Cutscene);
+
+                    if is_cutscene {
+                        // Cutscene mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
+                        self.ppu.set_title_screen_mode(false);
+                        self.ppu.set_cutscene_mode(true);
+
+                        // Pass cutscene data to PPU
+                        if let Some(cutscene) = cartridge.get_current_cutscene() {
+                            if cutscene.current_screen < cutscene.screens.len() {
+                                let screen = &cutscene.screens[cutscene.current_screen];
+
+                                // Pass image
+                                let image_vec: Vec<Vec<u8>> = screen.image.iter().map(|row| row.to_vec()).collect();
+                                self.ppu.set_cutscene_image(image_vec);
+
+                                // Pass text
+                                self.ppu.set_cutscene_text(screen.text_lines.clone());
+
+                                // Pass scroll offset
+                                self.ppu.set_cutscene_scroll_offset(cutscene.text_scroll_offset);
+
+                                // Pass character index for typing effect
+                                self.ppu.set_cutscene_char_index(cutscene.text_char_index);
+                            }
+                        }
+                    } else if is_title_screen {
+                        // Title screen mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(false);
+                        self.ppu.set_title_screen_mode(true);
+
+                        // Pass title logo data to PPU
+                        let logo = cartridge.get_title_logo();
+                        let logo_vec: Vec<Vec<u8>> = logo.iter().map(|row| row.to_vec()).collect();
+                        self.ppu.set_title_logo(logo_vec);
+
+                        // Set press start visibility
+                        self.ppu.set_show_press_start(cartridge.should_show_press_start());
+                    } else {
+                        // Gameplay mode
+                        self.ppu.set_intro_mode(false);
+                        self.ppu.set_zsynth_mode(false);
+                        self.ppu.set_platformer_mode(true);
+                        self.ppu.set_title_screen_mode(false);
+                        self.ppu.set_cutscene_mode(false);
+
+                        // Update lives display
+                        self.ppu.set_lives(cartridge.get_lives());
+
+                        // Update PPU scroll position
+                        let (camera_x, camera_y) = cartridge.get_camera_position();
+                        self.ppu.set_scroll(camera_x, camera_y);
+
+                        // Pass level tiles to PPU for rendering
+                        let tiles = cartridge.get_tiles();
+                        self.ppu.set_platformer_tiles(tiles);
+
+                        // Pass tileset pixel data to PPU (only needed once, but OK to set every frame)
+                        let tileset = cartridge.get_tileset();
+                        self.ppu.set_platformer_tileset(tileset);
+
+                        // Clear existing sprites
+                        self.ppu.clear_sprites();
+
+                        // Add hexagnome sprites
+                        let hexagnomes = cartridge.get_hexagnomes();
+                        for hexagnome in hexagnomes {
+                            let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
+                            let hex_sprite_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
+                            // Flip horizontally when facing right (hexagnome sprite faces left by default)
+                            let flip_horizontal = hexagnome.facing_right;
+                            self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
+                        }
+
+                        // Add projectile sprites with palette cycling for energy effect
+                        let projectiles = cartridge.get_projectiles();
+                        for projectile in projectiles {
+                            if projectile.active {
+                                let proj_sprite = PlatformerCartridge::get_projectile_sprite();
+                                let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
+                                let palette_cycle = PlatformerCartridge::get_projectile_palette_cycle(projectile.palette_cycle_timer);
+                                self.ppu.add_sprite_with_data_and_cycle(projectile.x, projectile.y, &proj_sprite_vec, true, false, palette_cycle);
+                            }
+                        }
+
+                        // Update HUD state (lives and invulnerability)
+                        let lives = cartridge.get_lives();
+                        self.ppu.set_lives(lives);
+
+                        let is_invulnerable = cartridge.is_invulnerable();
+                        let should_flash = is_invulnerable && ((self.ppu.get_frame_count() / 4) % 2 == 0); // Flash every 4 frames
+                        self.ppu.set_player_invulnerability_state(is_invulnerable, should_flash);
+
+                        // Add player sprite (world position - PPU will apply scroll)
+                        let (player_x, player_y) = cartridge.get_player_position();
+                        let animation_frame = cartridge.get_animation_frame();
+                        let sprite_data = cartridge.get_sprite_data(animation_frame);
+                        let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
+                        let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
+
+                        // Only render player if not flashing (invulnerability flash effect)
+                        if !should_flash {
+                            self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+                        }
+
+                        // Store debug info for after rendering
+                        self.debug_animation_frame = animation_frame;
+
+                        // Play background music (only if not dying)
+                        if cartridge.is_music_enabled() && !cartridge.is_dying() {
+                            // Lower the music volume so it doesn't overpower sound effects
+                            self.apu.set_sid_volume(0.3); // 30% volume for background music
+                            self.apu.set_sid_voice2_volume(0.3); // Lead melody at 30% of voice volume
+                            self.apu.set_sid_voice3_volume(0.3); // Upper harmony at 30% of voice volume
+                            self.play_platformer_midi_music(
+                                cartridge.get_current_lead_note(),
+                                cartridge.get_current_upper_note(),
+                                cartridge.get_current_bass_note(),
+                                cartridge.should_play_kick(),
+                                cartridge.should_play_snare(),
+                                cartridge.should_play_lead(),
+                                cartridge.should_stop_lead(),
+                                cartridge.should_play_upper(),
+                                cartridge.should_stop_upper(),
+                                cartridge.should_play_bass(),
+                                cartridge.should_stop_bass()
+                            );
+                        } else if cartridge.is_dying() {
+                            // Stop all music voices when dying
+                            self.apu.sid_voice1_stop();
+                            self.apu.sid_voice2_stop();
+                            self.apu.sid_voice3_stop();
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -315,6 +516,24 @@ impl ZebratronCartridgeSystem {
                     cartridge.clear_pending_notes();
                 }
             }
+            3 => {
+                // Platformer cartridge - process sound effects
+                let pending_sounds = if let Some(ref cartridge) = self.platformer_cartridge {
+                    cartridge.get_pending_sounds()
+                } else {
+                    Vec::new()
+                };
+
+                // Process each sound effect
+                for sound_id in pending_sounds {
+                    self.play_platformer_sound_effect(sound_id);
+                }
+
+                // Clear processed sounds
+                if let Some(ref mut cartridge) = self.platformer_cartridge {
+                    cartridge.clear_pending_sounds();
+                }
+            }
             _ => {}
         }
     }
@@ -338,6 +557,11 @@ impl ZebratronCartridgeSystem {
     fn play_jump_sound(&mut self) {
         // Longer, smoother rising pitch sweep from C4 to G5 over 0.6 seconds
         self.apu.play_sound_effect(60, 79, 1, 0.6); // C4 to G5, sawtooth, 600ms
+    }
+
+    fn play_short_jump_sound(&mut self) {
+        // Quick, short jump sound - brief upward sweep
+        self.apu.play_sound_effect(60, 67, 0, 0.15); // C4 to G4, pulse wave, 150ms
     }
 
     fn play_land_sound(&mut self) {
@@ -366,6 +590,24 @@ impl ZebratronCartridgeSystem {
         self.apu.play_sound_effect(84, 36, 1, 1.0); // C6 down to C2, sawtooth, 1 second
     }
 
+    fn play_platformer_sound_effect(&mut self, sound_id: u32) {
+        match sound_id {
+            0 => self.play_jump_sound(),
+            1 => self.play_land_sound(),
+            2 => self.play_short_jump_sound(),
+            3 => self.play_collect_sound(),
+            4 => self.play_enemy_hit_sound(),
+            7 => self.play_text_blip_sound(),  // Text typing blip (like NES RPGs)
+            8 => self.play_death_sound(),      // Death sound (Hambert flies off screen)
+            _ => {} // Unknown sound ID
+        }
+    }
+
+    fn play_text_blip_sound(&mut self) {
+        // Very short noise burst for text typing - subtle click sound
+        self.apu.play_sound_effect(72, 72, 4, 0.05); // C5, noise waveform, 50ms
+    }
+
     pub fn render(&mut self) {
         // Update PPU with current game state
         if let Some(cartridge) = &self.hambert_cartridge {
@@ -377,6 +619,8 @@ impl ZebratronCartridgeSystem {
         }
         
         self.ppu.render();
+        
+        // Debug animation frame indicator removed
     }
 
     pub fn stop_all_audio(&mut self) {
@@ -396,6 +640,15 @@ impl ZebratronCartridgeSystem {
 
     pub fn get_color_test_mode(&self) -> bool {
         self.ppu.get_color_test_mode()
+    }
+
+    // Palette cycling methods for animated effects
+    pub fn cycle_palette_range(&mut self, start: usize, end: usize) {
+        self.ppu.cycle_palette_range(start, end);
+    }
+
+    pub fn reset_palette(&mut self) {
+        self.ppu.reset_palette();
     }
 
     // APU methods (simplified for cartridge system)
@@ -673,5 +926,60 @@ impl ZebratronCartridgeSystem {
 
     pub fn poly_stop_all(&mut self) {
         self.apu.poly_stop_all();
+    }
+
+    fn play_platformer_midi_music(&mut self, lead_note: Option<u32>, upper_note: Option<u32>, bass_note: Option<u32>, should_play_kick: bool, should_play_snare: bool, should_play_lead: bool, should_stop_lead: bool, should_play_upper: bool, should_stop_upper: bool, should_play_bass: bool, should_stop_bass: bool) {
+        // Play MIDI-imported music for Level 1
+        // Voice 1: Bass
+        // Voice 2: Lead melody (or lower harmony in pattern 2)
+        // Voice 3: Upper harmony (pattern 2 only)
+
+        // Play bass on voice 1 (pulse wave) with independent timing
+        if should_play_bass {
+            if let Some(note) = bass_note {
+                self.apu.sid_voice1_play_note(note as u8, 0);
+            }
+        }
+
+        // Stop bass after note duration
+        if should_stop_bass {
+            self.apu.sid_voice1_stop();
+        }
+
+        // Play lead melody on voice 2 (pulse wave) - respect note durations
+        if should_play_lead {
+            if let Some(note) = lead_note {
+                self.apu.sid_voice2_play_note(note as u8, 0);
+            }
+        }
+
+        // Stop lead melody after note duration
+        if should_stop_lead {
+            self.apu.sid_voice2_stop();
+        }
+
+        // Play upper harmony on voice 3 (pattern 2 only)
+        if should_play_upper {
+            if let Some(note) = upper_note {
+                self.apu.sid_voice3_play_note(note as u8, 0);
+            }
+        }
+
+        // Stop upper harmony after note duration
+        if should_stop_upper {
+            self.apu.sid_voice3_stop();
+        }
+
+        // Kick drum on first beat of bar
+        if should_play_kick {
+            // Short low frequency blip: F2 (41) to F1 (29), 50ms duration
+            self.apu.play_sound_effect(41, 29, 0, 0.05);
+        }
+
+        // Snare on third beat of bar
+        if should_play_snare {
+            // Higher pitched noise: C5 (72) to C4 (60), noise waveform (4), 50ms duration
+            self.apu.play_sound_effect(72, 60, 4, 0.05);
+        }
     }
 }

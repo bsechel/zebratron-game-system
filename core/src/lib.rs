@@ -10,6 +10,8 @@ mod cartridge;
 mod sprite_converter;
 mod laugh_sample;
 mod font_system;
+mod tile_system;
+mod platformer_cartridge;
 
 use wasm_bindgen::prelude::*;
 
@@ -34,4 +36,6 @@ pub use system::ZebratronSystem;
 pub use system_cartridge::ZebratronCartridgeSystem;
 pub use cartridge::HambertCartridge;
 pub use cartridge::ZSynthCartridge;
+pub use platformer_cartridge::PlatformerCartridge;
 pub use sprite_converter::{SpriteConverter, SpriteData};
+pub use tile_system::{TileSystem, LevelData, CollisionType};

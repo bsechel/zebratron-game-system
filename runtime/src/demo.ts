@@ -7,6 +7,8 @@ class Demo {
   private isRunning = false;
   private frameCount = 0;
   private lastTime = 0;
+  private lastFrameTime = 0;
+  private readonly targetFrameTime = 1000 / 60; // 16.67ms for 60 FPS
   private colorTestPressed = false;
   private soundTestPressed = false;
   private soundTestMode = false;
@@ -285,6 +287,11 @@ class Demo {
         console.log('🎵 System ready for game sounds');
       }, 100);
 
+      // Actually start the WASM system (this will auto-load platformer cartridge)
+      console.log('🚀 Starting WASM system...');
+      await this.system.start();
+      console.log('✅ WASM system started, running:', this.system.isRunning());
+
     } catch (error) {
       console.error('❌ Failed to start system:', error);
     }
@@ -309,74 +316,84 @@ class Demo {
   private gameLoop = (currentTime: number = 0): void => {
     if (!this.isRunning) return;
 
-    // Calculate FPS
-    if (currentTime - this.lastTime >= 1000) {
-      const fps = this.frameCount;
-      this.frameCount = 0;
-      this.lastTime = currentTime;
-      this.updateFPS(fps);
-    }
+    // Calculate time since last game update
+    const deltaTime = currentTime - this.lastFrameTime;
 
-    // Handle input for sprite movement
-    const up = this.input.isPressed(Button.Up);
-    const down = this.input.isPressed(Button.Down);
-    const left = this.input.isPressed(Button.Left);
-    const right = this.input.isPressed(Button.Right);
+    // Only update game logic at 60 FPS, regardless of display refresh rate
+    if (deltaTime >= this.targetFrameTime) {
+      this.lastFrameTime = currentTime - (deltaTime % this.targetFrameTime);
 
-    // Toggle color test mode with Enter key
-    if (this.input.isPressed(Button.Start)) { // Using Start button for demo
-      // Only toggle once per press (simple debouncing)
-      if (!this.colorTestPressed) {
-        this.system.toggleColorTest();
-        this.colorTestPressed = true;
+      // Calculate FPS (for display purposes)
+      if (currentTime - this.lastTime >= 1000) {
+        const fps = this.frameCount;
+        this.frameCount = 0;
+        this.lastTime = currentTime;
+        this.updateFPS(fps);
       }
-    } else {
-      this.colorTestPressed = false;
-    }
 
-    // Toggle sound test mode with 'S' key
-    if (this.input.isPressed(Button.Select)) { // Using Select button for sound test
-      if (!this.soundTestPressed) {
-        this.soundTestMode = !this.soundTestMode;
-        if (this.soundTestMode) {
-          this.system.enterSoundTestMode();
-        } else {
-          this.system.exitSoundTestMode();
+      // Handle input for sprite movement
+      const up = this.input.isPressed(Button.Up);
+      const down = this.input.isPressed(Button.Down);
+      const left = this.input.isPressed(Button.Left);
+      const right = this.input.isPressed(Button.Right);
+      const a = this.input.isPressed(Button.A);
+      const b = this.input.isPressed(Button.B);
+
+      // Toggle color test mode with Enter key
+      if (this.input.isPressed(Button.Start)) { // Using Start button for demo
+        // Only toggle once per press (simple debouncing)
+        if (!this.colorTestPressed) {
+          this.system.toggleColorTest();
+          this.colorTestPressed = true;
         }
-        this.soundTestPressed = true;
+      } else {
+        this.colorTestPressed = false;
       }
-    } else {
-      this.soundTestPressed = false;
+
+      // Toggle sound test mode with 'S' key
+      if (this.input.isPressed(Button.Select)) { // Using Select button for sound test
+        if (!this.soundTestPressed) {
+          this.soundTestMode = !this.soundTestMode;
+          if (this.soundTestMode) {
+            this.system.enterSoundTestMode();
+          } else {
+            this.system.exitSoundTestMode();
+          }
+          this.soundTestPressed = true;
+        }
+      } else {
+        this.soundTestPressed = false;
+      }
+
+      // Sound test controls when in sound test mode
+      if (this.soundTestMode) {
+        this.handleSoundTestControls();
+      }
+
+      this.system.handleInput(up, down, left, right, a, b);
+
+      // Step the system for one frame
+      const frameReady = this.system.stepFrame();
+      if (frameReady) {
+        this.system.render();
+        this.frameCount++;
+
+        // Debug logging every 60 frames (once per second)
+        if (this.frameCount % 60 === 0) {
+          console.log(`🎮 Frame ${this.frameCount}, System running: ${this.system.isRunning()}`);
+        }
+      } else {
+        // Debug why frames aren't ready
+        if (this.frameCount < 5) {
+          console.log(`⚠️ Frame not ready, system running: ${this.system.isRunning()}`);
+        }
+      }
+
+      // Update debug info
+      this.updateDebugInfo();
     }
 
-    // Sound test controls when in sound test mode
-    if (this.soundTestMode) {
-      this.handleSoundTestControls();
-    }
-
-    this.system.handleInput(up, down, left, right);
-
-    // Step the system for one frame
-    const frameReady = this.system.stepFrame();
-    if (frameReady) {
-      this.system.render();
-      this.frameCount++;
-
-      // Debug logging every 60 frames (once per second)
-      if (this.frameCount % 60 === 0) {
-        console.log(`🎮 Frame ${this.frameCount}, System running: ${this.system.isRunning()}`);
-      }
-    } else {
-      // Debug why frames aren't ready
-      if (this.frameCount < 5) {
-        console.log(`⚠️ Frame not ready, system running: ${this.system.isRunning()}`);
-      }
-    }
-
-    // Update debug info
-    this.updateDebugInfo();
-
-    // Continue the loop
+    // Continue the loop at display refresh rate
     requestAnimationFrame(this.gameLoop);
   };
 

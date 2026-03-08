@@ -91,4 +91,5 @@ cd core && wasm-pack build --target web --out-dir ../runtime/pkg
 - `/docs/` - Documentation and tutorials
 
 ## Documentation
+- **[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)** - Master index of all project documentation
 - [Developer Guide](./DEVELOPER_GUIDE.md) - Detailed system architecture and component documentation
