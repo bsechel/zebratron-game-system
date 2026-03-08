@@ -268,11 +268,15 @@ pub struct SpriteWithData {
     pub pixel_data: Vec<Vec<u8>>, // Variable-sized sprite with palette indices
     pub active: bool,
     pub flip_horizontal: bool,
+    pub palette_cycle: u8, // For energy/palette cycling effects (0-3)
 }
 
 pub struct Ppu {
     // Screen buffer - RGBA format
     screen_buffer: Vec<u8>,
+
+    // Runtime palette (mutable for palette cycling effects)
+    palette: [(u8, u8, u8); 128],
 
     // PPU registers (authentic 8-bit hardware)
     control: u8,
@@ -309,7 +313,7 @@ pub struct Ppu {
     platformer_mode: bool,
     // Title screen mode
     title_screen_mode: bool,
-    title_logo: Option<Vec<Vec<u8>>>, // 80x32 title logo
+    title_logo: Option<Vec<Vec<u8>>>, // 320x240 full-screen title image
     show_press_start: bool,
 
     // Cutscene mode
@@ -338,6 +342,7 @@ impl Ppu {
 
         Ppu {
             screen_buffer,
+            palette: MASTER_PALETTE, // Initialize with default palette
             control: 0,
             mask: 0,
             status: 0,
@@ -421,12 +426,17 @@ impl Ppu {
     }
     
     pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool) {
+        self.add_sprite_with_data_and_cycle(x, y, pixel_data, active, flip_horizontal, 0);
+    }
+
+    pub fn add_sprite_with_data_and_cycle(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool, palette_cycle: u8) {
         self.sprites_with_data.push(SpriteWithData {
             x,
             y,
             pixel_data: pixel_data.to_vec(),
             active,
             flip_horizontal,
+            palette_cycle,
         });
     }
 
@@ -437,6 +447,26 @@ impl Ppu {
 
     pub fn get_color_test_mode(&self) -> bool {
         self.color_test_mode
+    }
+
+    // Palette cycling for animated effects (energy, water, lava, etc.)
+    pub fn cycle_palette_range(&mut self, start: usize, end: usize) {
+        // Rotate colors in the specified range (inclusive)
+        // Example: cycle_palette_range(120, 127) rotates indices 120-127
+        if start >= end || end >= self.palette.len() {
+            return; // Invalid range
+        }
+
+        let temp = self.palette[start];
+        for i in start..end {
+            self.palette[i] = self.palette[i + 1];
+        }
+        self.palette[end] = temp;
+    }
+
+    pub fn reset_palette(&mut self) {
+        // Reset to original master palette
+        self.palette = MASTER_PALETTE;
     }
 
     // Intro/interlude screen mode
@@ -531,7 +561,7 @@ impl Ppu {
 
     fn render_game(&mut self) {
         // Clear screen with background color
-        let bg_color = MASTER_PALETTE[0]; // Black
+        let bg_color = self.palette[0]; // Black
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -563,7 +593,7 @@ impl Ppu {
 
     fn render_platformer(&mut self) {
         // Clear screen with a different background color (sky)
-        let bg_color = MASTER_PALETTE[65]; // Sky color
+        let bg_color = self.palette[72]; // Sky color
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -593,9 +623,12 @@ impl Ppu {
         // Render new-style sprites (with pixel data)
         for sprite in &sprites_with_data {
             if sprite.active {
-                self.render_sprite_with_data(sprite.x - scroll_x, sprite.y - scroll_y, &sprite.pixel_data, sprite.flip_horizontal);
+                self.render_sprite_with_data(sprite.x - scroll_x, sprite.y - scroll_y, &sprite.pixel_data, sprite.flip_horizontal, sprite.palette_cycle);
             }
         }
+
+        // Render lives hearts in top-right corner
+        self.render_hearts();
 
         // Render simple text
         self.render_text("PLATFORMER", 10, 10, (255, 255, 255));
@@ -633,7 +666,7 @@ impl Ppu {
                 87u8  // Light blue near horizon
             };
 
-            let color = MASTER_PALETTE[palette_index as usize % MASTER_PALETTE.len()];
+            let color = self.palette[palette_index as usize % self.palette.len()];
 
             // Fill the entire width with this color
             for x in 0..SCREEN_WIDTH {
@@ -658,7 +691,7 @@ impl Ppu {
     }
 
     fn render_mountain_layer(&mut self, offset: f32, base_height: usize, color_index: u8) {
-        let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+        let color = self.palette[color_index as usize % self.palette.len()];
 
         // Create mountain silhouette using a simple sin wave pattern
         for x in 0..SCREEN_WIDTH {
@@ -721,7 +754,7 @@ impl Ppu {
                         17u8  // Dark brown rock
                     };
 
-                    let color = MASTER_PALETTE[ground_color as usize % MASTER_PALETTE.len()];
+                    let color = self.palette[ground_color as usize % self.palette.len()];
                     self.screen_buffer[pixel_index] = color.0;
                     self.screen_buffer[pixel_index + 1] = color.1;
                     self.screen_buffer[pixel_index + 2] = color.2;
@@ -752,7 +785,7 @@ impl Ppu {
         let crown_radius = 15;
 
         // Render trunk
-        let trunk_color = MASTER_PALETTE[32 % MASTER_PALETTE.len()]; // Brown
+        let trunk_color = self.palette[32 % self.palette.len()]; // Brown
         for y in (base_y - trunk_height)..base_y {
             for x in (base_x - trunk_width / 2)..(base_x + trunk_width / 2) {
                 if x >= 0 && x < SCREEN_WIDTH as i32 && y >= 0 && y < SCREEN_HEIGHT as i32 {
@@ -768,7 +801,7 @@ impl Ppu {
         }
 
         // Render crown (circular)
-        let crown_color = MASTER_PALETTE[48 % MASTER_PALETTE.len()]; // Dark green
+        let crown_color = self.palette[48 % self.palette.len()]; // Dark green
         let crown_center_y = base_y - trunk_height - crown_radius / 2;
 
         for y in (crown_center_y - crown_radius)..(crown_center_y + crown_radius) {
@@ -827,7 +860,7 @@ impl Ppu {
                     
                     let color_index = self.get_sprite_pixel(sprite_id, sprite_px, py);
                     if color_index > 0 {
-                        let mut color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+                        let mut color = self.palette[color_index as usize % self.palette.len()];
                         
                         // Apply death flash effect for player sprite (sprite_id 0)
                         if sprite_id == 0 && self.player_dying {
@@ -1097,7 +1130,7 @@ impl Ppu {
 
     fn render_debug_coordinates(&mut self) {
         // Show world coordinates at each corner
-        let text_color = MASTER_PALETTE[15]; // White
+        let text_color = self.palette[15]; // White
 
         // Top-left: (scroll_x, scroll_y)
         let tl_text = format!("({:.0},{:.0})", self.scroll_x, self.scroll_y);
@@ -1147,6 +1180,59 @@ impl Ppu {
         // Only show characters up to chars_visible
         let display_text: String = text.chars().take(chars_visible).collect();
         self.render_text(&display_text, x, y, color);
+    }
+
+    // Render hearts for lives display
+    fn render_hearts(&mut self) {
+        // Heart sprite data will be passed from cartridge
+        // For now, render simple colored hearts using palette colors
+        // Pink heart colors: 17 (dark pink), 18 (bright pink)
+
+        let hearts_to_render = self.hud_lives.min(10); // Cap at 10 hearts for display
+        let heart_spacing = 10; // 8 pixels wide + 2 pixels spacing
+        let start_x = SCREEN_WIDTH - (hearts_to_render as usize * heart_spacing) - 10;
+        let start_y = 10;
+
+        for i in 0..hearts_to_render {
+            let heart_x = start_x + (i as usize * heart_spacing);
+            self.render_heart(heart_x, start_y);
+        }
+    }
+
+    fn render_heart(&mut self, x: usize, y: usize) {
+        // 8x8 heart sprite with pink colors (palette indices 17 and 18)
+        let heart_pattern = [
+            [255,17,17,255,255,17,17,255],
+            [17,18,18,17,17,18,18,17],
+            [18,18,18,18,18,18,18,18],
+            [18,18,18,18,18,18,18,18],
+            [17,18,18,18,18,18,18,17],
+            [255,17,18,18,18,18,17,255],
+            [255,255,17,18,18,17,255,255],
+            [255,255,255,17,17,255,255,255],
+        ];
+
+        for (row, pattern_row) in heart_pattern.iter().enumerate() {
+            for (col, &palette_index) in pattern_row.iter().enumerate() {
+                if palette_index == 255 {
+                    continue; // Skip transparent pixels
+                }
+
+                let pixel_x = x + col;
+                let pixel_y = y + row;
+
+                if pixel_x < SCREEN_WIDTH && pixel_y < SCREEN_HEIGHT {
+                    let idx = (pixel_y * SCREEN_WIDTH + pixel_x) * 4;
+                    if idx < self.screen_buffer.len() - 3 {
+                        let color = self.palette[palette_index as usize];
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
+                    }
+                }
+            }
+        }
     }
 
     // Set the language for text rendering
@@ -1224,7 +1310,7 @@ impl Ppu {
         const SQUARE_SIZE: usize = 20; // Bigger squares to fill screen better
         
         // Clear screen with dark background
-        let bg_color = MASTER_PALETTE[0]; // Black
+        let bg_color = self.palette[0]; // Black
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;
             self.screen_buffer[i + 1] = bg_color.1;
@@ -1271,12 +1357,12 @@ impl Ppu {
         // Render color squares without labels
         for i in 0..count {
             let color_index = start_index + i;
-            if color_index < MASTER_PALETTE.len() {
+            if color_index < self.palette.len() {
                 let square_x = x + i * square_size;
                 let square_y = y;
 
                 // Render color square
-                let color = MASTER_PALETTE[color_index];
+                let color = self.palette[color_index];
                 for py in 0..square_size {
                     for px in 0..square_size {
                         let screen_x = square_x + px;
@@ -1295,12 +1381,12 @@ impl Ppu {
                 }
 
                 // Add color number
-                let bg_color = MASTER_PALETTE[color_index];
+                let bg_color = self.palette[color_index];
                 let brightness = (bg_color.0 as u32 + bg_color.1 as u32 + bg_color.2 as u32) / 3;
                 let text_color = if brightness > 128 { 
-                    MASTER_PALETTE[0] // Black for bright backgrounds
+                    self.palette[0] // Black for bright backgrounds
                 } else { 
-                    MASTER_PALETTE[15] // White for dark backgrounds
+                    self.palette[15] // White for dark backgrounds
                 };
                 
                 self.render_small_text(&color_index.to_string(), square_x + 2, square_y + 2, text_color);
@@ -1310,7 +1396,7 @@ impl Ppu {
 
     fn render_intro_screen(&mut self) {
         // Clear screen with dark blue background
-        let bg_color = MASTER_PALETTE[82]; // Dark blue from palette
+        let bg_color = self.palette[82]; // Dark blue from palette
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -1327,7 +1413,7 @@ impl Ppu {
 
         // Render intro text below the sprite
         let text_y = sprite_y + 32 * sprite_scale + 20; // Below the large sprite (32 is new height)
-        let text_color = MASTER_PALETTE[15]; // White
+        let text_color = self.palette[15]; // White
         self.render_intro_text(text_y, text_color);
     }
 
@@ -1372,7 +1458,7 @@ impl Ppu {
 
     fn render_pink_heart_text(&mut self, x: f32, y: f32) {
         // Render a big heart pattern in light red
-        let heart_color = MASTER_PALETTE[104]; // Color index 104 as requested
+        let heart_color = self.palette[104]; // Color index 104 as requested
         
         // 16x16 heart pattern (double size)
         let heart_pattern = [
@@ -1492,7 +1578,7 @@ impl Ppu {
             for px in 0..30 { // New sprite width
                 let color_index = self.get_new_hambert_pixel(px, py);
                 if color_index > 0 { // Only render non-transparent pixels
-                    let color = MASTER_PALETTE[color_index as usize % MASTER_PALETTE.len()];
+                    let color = self.palette[color_index as usize % self.palette.len()];
 
                     // Scale up the pixel by drawing a scale x scale block
                     for sy in 0..scale {
@@ -1545,7 +1631,7 @@ impl Ppu {
 
     fn render_zsynth_screen(&mut self) {
         // Clear screen with dark purple background for Z-Synth
-        let bg_color = MASTER_PALETTE[95]; // Dark purple from palette
+        let bg_color = self.palette[95]; // Dark purple from palette
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -1554,10 +1640,10 @@ impl Ppu {
         }
 
         // Render test text to verify rendering pipeline
-        let title_color = MASTER_PALETTE[15]; // White
+        let title_color = self.palette[15]; // White
         self.render_text("Z-SYNTH PIANO", 110, 20, title_color);
         
-        let info_color = MASTER_PALETTE[31]; // Light blue
+        let info_color = self.palette[31]; // Light blue
         self.render_text("TEST RENDERING MODE", 90, 40, info_color);
         self.render_text("KEYS: Z S X D C V G B H N J M", 50, 60, info_color);
         self.render_text("NOTES: C2 through B2", 80, 80, info_color);
@@ -1571,59 +1657,51 @@ impl Ppu {
         }
 
         // Debug info
-        let debug_color = MASTER_PALETTE[47]; // Yellow
+        let debug_color = self.palette[47]; // Yellow
         self.render_text(&format!("Sprites: {}", self.sprites.len()), 10, 200, debug_color);
         self.render_text(&format!("Frame: {}", self.frame_count), 10, 220, debug_color);
     }
 
     fn render_title_screen(&mut self) {
-        // Clear screen with dark blue background (like classic NES/Master System title screens)
-        let bg_color = MASTER_PALETTE[82]; // Dark blue
-        for i in (0..self.screen_buffer.len()).step_by(4) {
-            self.screen_buffer[i] = bg_color.0;     // R
-            self.screen_buffer[i + 1] = bg_color.1; // G
-            self.screen_buffer[i + 2] = bg_color.2; // B
-            self.screen_buffer[i + 3] = 255;        // A
-        }
-
-        // Render title logo if available
+        // Render full-screen title image (320x240)
         if let Some(ref logo) = self.title_logo {
-            let logo_x = (SCREEN_WIDTH - 80) / 2; // Center the 80px wide logo
-            let logo_y = 60; // Position near top
-
             for (y, row) in logo.iter().enumerate() {
                 for (x, &palette_idx) in row.iter().enumerate() {
-                    if palette_idx != 0 { // 0 = transparent
-                        let screen_x = logo_x + x;
-                        let screen_y = logo_y + y;
-
-                        if screen_x < SCREEN_WIDTH && screen_y < SCREEN_HEIGHT {
-                            let color = MASTER_PALETTE[palette_idx as usize];
-                            let idx = (screen_y * SCREEN_WIDTH + screen_x) * 4;
-                            self.screen_buffer[idx] = color.0;
-                            self.screen_buffer[idx + 1] = color.1;
-                            self.screen_buffer[idx + 2] = color.2;
-                            self.screen_buffer[idx + 3] = 255;
-                        }
+                    if x < SCREEN_WIDTH && y < SCREEN_HEIGHT {
+                        let color = self.palette[palette_idx as usize];
+                        let idx = (y * SCREEN_WIDTH + x) * 4;
+                        self.screen_buffer[idx] = color.0;
+                        self.screen_buffer[idx + 1] = color.1;
+                        self.screen_buffer[idx + 2] = color.2;
+                        self.screen_buffer[idx + 3] = 255;
                     }
                 }
+            }
+        } else {
+            // Fallback: Clear screen with dark blue background
+            let bg_color = self.palette[82]; // Dark blue
+            for i in (0..self.screen_buffer.len()).step_by(4) {
+                self.screen_buffer[i] = bg_color.0;     // R
+                self.screen_buffer[i + 1] = bg_color.1; // G
+                self.screen_buffer[i + 2] = bg_color.2; // B
+                self.screen_buffer[i + 3] = 255;        // A
             }
         }
 
         // Render "PRESS START" text if should be shown (blinking animation)
         if self.show_press_start {
-            let press_start_color = MASTER_PALETTE[37]; // Bright yellow
+            let press_start_color = self.palette[37]; // Bright yellow
             self.render_text("PRESS START", 110, 170, press_start_color);
         }
 
-        // Add copyright/credit text
-        let credit_color = MASTER_PALETTE[13]; // Light gray
+        // Add copyright/credit text on top of the image
+        let credit_color = self.palette[13]; // Light gray
         self.render_small_text("(C) 2025", 130, 220, credit_color);
     }
 
     fn render_cutscene(&mut self) {
         // Clear screen with black background
-        let bg_color = MASTER_PALETTE[0]; // Black
+        let bg_color = self.palette[0]; // Black
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -1643,7 +1721,7 @@ impl Ppu {
                         let screen_y = img_y + y;
 
                         if screen_x < SCREEN_WIDTH && screen_y < SCREEN_HEIGHT {
-                            let color = MASTER_PALETTE[palette_idx as usize];
+                            let color = self.palette[palette_idx as usize];
                             let idx = (screen_y * SCREEN_WIDTH + screen_x) * 4;
                             self.screen_buffer[idx] = color.0;
                             self.screen_buffer[idx + 1] = color.1;
@@ -1656,7 +1734,7 @@ impl Ppu {
         }
 
         // Render text lines with typing effect
-        let text_color = MASTER_PALETTE[15]; // White
+        let text_color = self.palette[15]; // White
         let start_y = 130; // Start below image
         let line_height = 12;
 
@@ -1693,13 +1771,13 @@ impl Ppu {
         }
 
         // Add "PRESS BUTTON" prompt at bottom
-        let prompt_color = MASTER_PALETTE[37]; // Yellow
+        let prompt_color = self.palette[37]; // Yellow
         self.render_small_text("PRESS ANY BUTTON", 100, 215, prompt_color);
     }
 
     fn render_platformer_background(&mut self) {
         // Simple clouds in sky  
-        let cloud_color = MASTER_PALETTE[63]; // Light gray
+        let cloud_color = self.palette[63]; // Light gray
         
         // Draw simple cloud shapes
         for cloud_x in [50, 150, 250] {
@@ -1707,7 +1785,7 @@ impl Ppu {
         }
         
         // Simple sun
-        let sun_color = MASTER_PALETTE[52]; // Yellow
+        let sun_color = self.palette[52]; // Yellow
         for y in 20..35 {
             for x in 280..295 {
                 if (x as i32 - 287).pow(2) + (y as i32 - 27).pow(2) < 64 { // Circle formula
@@ -1724,7 +1802,7 @@ impl Ppu {
     }
 
     fn render_platformer_cloud(&mut self, center_x: usize, center_y: usize) {
-        let cloud_color = MASTER_PALETTE[63]; // Light gray
+        let cloud_color = self.palette[63]; // Light gray
         
         // Draw a simple cloud shape
         for y in (center_y.saturating_sub(5))..(center_y + 5) {
@@ -1748,12 +1826,12 @@ impl Ppu {
 
     fn render_platformer_tiles(&mut self) {
         // Dynamic tile rendering that handles the expanded 200-tile world
-        let ground_color = MASTER_PALETTE[24]; // Brown
-        let platform_color = MASTER_PALETTE[31]; // Green
-        let pitfall_color = MASTER_PALETTE[5]; // Dark red
-        let passage_color = MASTER_PALETTE[39]; // Sky blue (same as background)
-        let water_color = MASTER_PALETTE[1]; // Blue
-        let swim_through_color = MASTER_PALETTE[17]; // Darker blue
+        let ground_color = self.palette[24]; // Brown
+        let platform_color = self.palette[31]; // Green
+        let pitfall_color = self.palette[5]; // Dark red
+        let passage_color = self.palette[39]; // Sky blue (same as background)
+        let water_color = self.palette[1]; // Blue
+        let swim_through_color = self.palette[17]; // Darker blue
         
         // Get scroll offset for camera movement
         let scroll_x = self.scroll_x;
@@ -1845,7 +1923,7 @@ impl Ppu {
                         continue;
                     }
 
-                    let color = MASTER_PALETTE[palette_index as usize];
+                    let color = self.palette[palette_index as usize];
 
                     let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
                     if idx < self.screen_buffer.len() - 3 {
@@ -1907,8 +1985,8 @@ impl Ppu {
 
     fn render_platformer_sprite(&mut self, x: f32, y: f32, sprite_id: u32, flip_horizontal: bool) {
         // Fallback: render a simple square for old-style sprites
-        let player_color = MASTER_PALETTE[47]; // Yellow/Orange
-        let outline_color = MASTER_PALETTE[0]; // Black
+        let player_color = self.palette[47]; // Yellow/Orange
+        let outline_color = self.palette[0]; // Black
         
         let sprite_x = x as i32;
         let sprite_y = y as i32;
@@ -1942,7 +2020,7 @@ impl Ppu {
         }
     }
     
-    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool) {
+    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool, palette_cycle: u8) {
         if pixel_data.is_empty() {
             return;
         }
@@ -1960,6 +2038,21 @@ impl Ppu {
                     continue;
                 }
 
+                // Apply palette cycling for energy effects (shifts palette index by cycle amount)
+                let cycled_index = if palette_cycle > 0 {
+                    // Cycle through green energy colors: 48, 50, 52, 54
+                    if palette_index >= 48 && palette_index <= 54 && palette_index % 2 == 0 {
+                        // Cycle the green indices
+                        let base = 48;
+                        let offset = (palette_index - base) / 2; // 0, 1, 2, 3
+                        base + (((offset + palette_cycle) % 4) * 2)
+                    } else {
+                        palette_index
+                    }
+                } else {
+                    palette_index
+                };
+
                 // Apply horizontal flipping if needed
                 let actual_col = if flip_horizontal {
                     sprite_width - 1 - col // Flip horizontally
@@ -1974,7 +2067,7 @@ impl Ppu {
                    pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
                     let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
                     if idx < self.screen_buffer.len() - 3 {
-                        let color = MASTER_PALETTE[palette_index as usize];
+                        let color = self.palette[cycled_index as usize];
                         self.screen_buffer[idx] = color.0;
                         self.screen_buffer[idx + 1] = color.1;
                         self.screen_buffer[idx + 2] = color.2;

@@ -84,6 +84,16 @@ impl ZebratronCartridgeSystem {
         true
     }
 
+    pub fn skip_to_gameplay(&mut self) {
+        if let Some(ref mut platformer) = self.platformer_cartridge {
+            platformer.skip_to_gameplay();
+        }
+        // Clear PPU cutscene/title state
+        self.ppu.set_cutscene_mode(false);
+        self.ppu.set_platformer_mode(true);
+        self.ppu.set_title_screen_mode(false);
+    }
+
     pub fn reset(&mut self) {
         self.cpu.reset();
         self.running = false;
@@ -358,6 +368,9 @@ impl ZebratronCartridgeSystem {
                         self.ppu.set_title_screen_mode(false);
                         self.ppu.set_cutscene_mode(false);
 
+                        // Update lives display
+                        self.ppu.set_lives(cartridge.get_lives());
+
                         // Update PPU scroll position
                         let (camera_x, camera_y) = cartridge.get_camera_position();
                         self.ppu.set_scroll(camera_x, camera_y);
@@ -383,15 +396,24 @@ impl ZebratronCartridgeSystem {
                             self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
                         }
 
-                        // Add projectile sprites
+                        // Add projectile sprites with palette cycling for energy effect
                         let projectiles = cartridge.get_projectiles();
                         for projectile in projectiles {
                             if projectile.active {
                                 let proj_sprite = PlatformerCartridge::get_projectile_sprite();
                                 let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
-                                self.ppu.add_sprite_with_data(projectile.x, projectile.y, &proj_sprite_vec, true, false);
+                                let palette_cycle = PlatformerCartridge::get_projectile_palette_cycle(projectile.palette_cycle_timer);
+                                self.ppu.add_sprite_with_data_and_cycle(projectile.x, projectile.y, &proj_sprite_vec, true, false, palette_cycle);
                             }
                         }
+
+                        // Update HUD state (lives and invulnerability)
+                        let lives = cartridge.get_lives();
+                        self.ppu.set_lives(lives);
+
+                        let is_invulnerable = cartridge.is_invulnerable();
+                        let should_flash = is_invulnerable && ((self.ppu.get_frame_count() / 4) % 2 == 0); // Flash every 4 frames
+                        self.ppu.set_player_invulnerability_state(is_invulnerable, should_flash);
 
                         // Add player sprite (world position - PPU will apply scroll)
                         let (player_x, player_y) = cartridge.get_player_position();
@@ -399,16 +421,39 @@ impl ZebratronCartridgeSystem {
                         let sprite_data = cartridge.get_sprite_data(animation_frame);
                         let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
                         let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
-                        self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+
+                        // Only render player if not flashing (invulnerability flash effect)
+                        if !should_flash {
+                            self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+                        }
 
                         // Store debug info for after rendering
                         self.debug_animation_frame = animation_frame;
 
-                        // Play background music
-                        if cartridge.is_music_enabled() {
+                        // Play background music (only if not dying)
+                        if cartridge.is_music_enabled() && !cartridge.is_dying() {
                             // Lower the music volume so it doesn't overpower sound effects
                             self.apu.set_sid_volume(0.3); // 30% volume for background music
-                            self.play_platformer_music(cartridge.get_music_step());
+                            self.apu.set_sid_voice2_volume(0.3); // Lead melody at 30% of voice volume
+                            self.apu.set_sid_voice3_volume(0.3); // Upper harmony at 30% of voice volume
+                            self.play_platformer_midi_music(
+                                cartridge.get_current_lead_note(),
+                                cartridge.get_current_upper_note(),
+                                cartridge.get_current_bass_note(),
+                                cartridge.should_play_kick(),
+                                cartridge.should_play_snare(),
+                                cartridge.should_play_lead(),
+                                cartridge.should_stop_lead(),
+                                cartridge.should_play_upper(),
+                                cartridge.should_stop_upper(),
+                                cartridge.should_play_bass(),
+                                cartridge.should_stop_bass()
+                            );
+                        } else if cartridge.is_dying() {
+                            // Stop all music voices when dying
+                            self.apu.sid_voice1_stop();
+                            self.apu.sid_voice2_stop();
+                            self.apu.sid_voice3_stop();
                         }
                     }
                 }
@@ -553,6 +598,7 @@ impl ZebratronCartridgeSystem {
             3 => self.play_collect_sound(),
             4 => self.play_enemy_hit_sound(),
             7 => self.play_text_blip_sound(),  // Text typing blip (like NES RPGs)
+            8 => self.play_death_sound(),      // Death sound (Hambert flies off screen)
             _ => {} // Unknown sound ID
         }
     }
@@ -594,6 +640,15 @@ impl ZebratronCartridgeSystem {
 
     pub fn get_color_test_mode(&self) -> bool {
         self.ppu.get_color_test_mode()
+    }
+
+    // Palette cycling methods for animated effects
+    pub fn cycle_palette_range(&mut self, start: usize, end: usize) {
+        self.ppu.cycle_palette_range(start, end);
+    }
+
+    pub fn reset_palette(&mut self) {
+        self.ppu.reset_palette();
     }
 
     // APU methods (simplified for cartridge system)
@@ -873,73 +928,58 @@ impl ZebratronCartridgeSystem {
         self.apu.poly_stop_all();
     }
 
-    fn play_platformer_music(&mut self, step: usize) {
-        // Simple chip-tune background music for platformer
-        // 32-step loop with bass, melody, harmony, and drums
+    fn play_platformer_midi_music(&mut self, lead_note: Option<u32>, upper_note: Option<u32>, bass_note: Option<u32>, should_play_kick: bool, should_play_snare: bool, should_play_lead: bool, should_stop_lead: bool, should_play_upper: bool, should_stop_upper: bool, should_play_bass: bool, should_stop_bass: bool) {
+        // Play MIDI-imported music for Level 1
+        // Voice 1: Bass
+        // Voice 2: Lead melody (or lower harmony in pattern 2)
+        // Voice 3: Upper harmony (pattern 2 only)
 
-        // Kick drum - very short blip on beats 1 and 3
-        if step % 8 == 0 {
-            // Very short low frequency blip - 36 (C2) to 24 (C1), pulse wave, 50ms
-            self.apu.play_sound_effect(36, 24, 0, 0.05);
+        // Play bass on voice 1 (pulse wave) with independent timing
+        if should_play_bass {
+            if let Some(note) = bass_note {
+                self.apu.sid_voice1_play_note(note as u8, 0);
+            }
         }
 
-        // Snare/hi-hat - short high blip on beats 2 and 4
-        if step % 8 == 4 {
-            // Very short high frequency blip - 84 (C6) to 72 (C5), noise-like, 40ms
-            self.apu.play_sound_effect(84, 72, 0, 0.04);
-        }
-
-        // Melody stops - selective stopping for variation
-        // Stop on odd steps EXCEPT before phrase endings (7, 15, 23, 31)
-        let is_phrase_ending = step % 32 == 6 || step % 32 == 14 || step % 32 == 22 || step % 32 == 30;
-        if step % 2 == 1 && !is_phrase_ending {
-            self.apu.sid_voice2_stop();
-        }
-
-        // Bass stops after 2 steps (keeps bass punchy)
-        if step % 4 == 2 {
+        // Stop bass after note duration
+        if should_stop_bass {
             self.apu.sid_voice1_stop();
         }
 
-        // Harmony holds longer - only stop right before next harmony note
-        if step % 8 == 1 || step % 8 == 5 {
+        // Play lead melody on voice 2 (pulse wave) - respect note durations
+        if should_play_lead {
+            if let Some(note) = lead_note {
+                self.apu.sid_voice2_play_note(note as u8, 0);
+            }
+        }
+
+        // Stop lead melody after note duration
+        if should_stop_lead {
+            self.apu.sid_voice2_stop();
+        }
+
+        // Play upper harmony on voice 3 (pattern 2 only)
+        if should_play_upper {
+            if let Some(note) = upper_note {
+                self.apu.sid_voice3_play_note(note as u8, 0);
+            }
+        }
+
+        // Stop upper harmony after note duration
+        if should_stop_upper {
             self.apu.sid_voice3_stop();
         }
 
-        // Bass line (voice 1) - plays on every 4th step
-        if step % 4 == 0 {
-            let bass_pattern = [36, 36, 43, 0, 41, 41, 38, 0]; // C2, C2, G2, rest, F2, F2, D2, rest
-            let bass_note = bass_pattern[(step / 4) % 8];
-            if bass_note > 0 {
-                self.apu.sid_voice1_play_note(bass_note, 0); // Pulse wave for bass
-            } else {
-                // Stop on rests
-                self.apu.sid_voice1_stop();
-            }
+        // Kick drum on first beat of bar
+        if should_play_kick {
+            // Short low frequency blip: F2 (41) to F1 (29), 50ms duration
+            self.apu.play_sound_effect(41, 29, 0, 0.05);
         }
 
-        // Melody (voice 2) - plays on every even step
-        if step % 2 == 0 {
-            let melody_pattern = [
-                60, 62, 64, 0,   // C4, D4, E4, rest
-                67, 65, 64, 0,   // G4, F4, E4, rest
-                60, 64, 67, 72,  // C4, E4, G4, C5 (high note holds)
-                67, 0, 60, 0,    // G4, rest, C4, rest
-            ];
-            let melody_note = melody_pattern[(step / 2) % 16];
-            if melody_note > 0 {
-                self.apu.sid_voice2_play_note(melody_note, 1); // Sawtooth for melody
-            } else {
-                // Stop on rests
-                self.apu.sid_voice2_stop();
-            }
-        }
-
-        // Harmony (voice 3) - plays on beats 2 and 4 of each bar (holds longer)
-        if step % 8 == 2 || step % 8 == 6 {
-            let harmony_pattern = [64, 71, 69, 67]; // E4, B4, A4, G4
-            let harmony_note = harmony_pattern[(step / 8) % 4];
-            self.apu.sid_voice3_play_note(harmony_note, 2); // Triangle for harmony
+        // Snare on third beat of bar
+        if should_play_snare {
+            // Higher pitched noise: C5 (72) to C4 (60), noise waveform (4), 50ms duration
+            self.apu.play_sound_effect(72, 60, 4, 0.05);
         }
     }
 }
