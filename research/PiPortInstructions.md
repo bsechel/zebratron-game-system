@@ -6,6 +6,150 @@ Guide for porting ZebratronGameSystem to Raspberry Pi hardware.
 
 Converting the WebAssembly-based ZebratronGameSystem to run natively on Raspberry Pi. The core game engine (written in Rust) can be largely reused - we just need to replace the web interface with native Linux graphics and input.
 
+## Dual-Target Strategy (Web + Native)
+
+**Good news**: The architecture makes it easy to support BOTH web and native Pi builds from the same codebase!
+
+### Current Architecture Analysis
+
+**Already portable (no changes needed):**
+- ✅ Core game engine (CPU, PPU, APU, Memory)
+- ✅ Cartridge system
+- ✅ Tile/sprite systems
+- ✅ Font rendering
+- ✅ Audio synthesis (digital oscillators)
+
+**Platform-specific (thin interface layer):**
+- ❌ `#[wasm_bindgen]` attributes (web only)
+- ❌ Canvas rendering (replaced with native framebuffer)
+- ❌ Web Audio API callbacks (replaced with ALSA/CPAL)
+- ❌ Browser input events (replaced with gamepad library)
+
+### Simple Dual-Build Approach
+
+**Don't overcomplicate it!** No need for complex trait abstractions or conditional compilation. Just separate the runtime layers:
+
+```
+ZebratronGameSystem/
+├── core/                    # Shared engine (pure Rust, no wasm_bindgen)
+│   ├── src/
+│   │   ├── cpu.rs          # ✅ Works everywhere
+│   │   ├── ppu.rs          # ✅ Works everywhere
+│   │   ├── apu.rs          # ✅ Works everywhere
+│   │   ├── memory.rs       # ✅ Works everywhere
+│   │   ├── cartridge.rs    # ✅ Works everywhere
+│   │   └── lib.rs          # Pure Rust exports (no wasm_bindgen)
+│   └── Cargo.toml
+│
+├── runtime-web/             # Web runtime (current code)
+│   ├── src/
+│   │   ├── system.rs       # WASM bindings wrapper
+│   │   ├── renderer.ts     # Canvas API
+│   │   └── demo.ts         # Browser code
+│   └── Cargo.toml          # Depends on core + wasm-bindgen
+│
+└── runtime-native/          # Native Pi runtime (new, simple)
+    ├── src/
+    │   └── main.rs         # minifb/SDL2 + CPAL + gilrs
+    └── Cargo.toml          # Depends on core + native libraries
+```
+
+### How Both Runtimes Work
+
+**Web runtime** (runtime-web/src/system.rs):
+```rust
+use wasm_bindgen::prelude::*;
+use zebratron_core::{Cpu, Ppu, Apu, Memory};
+
+#[wasm_bindgen]
+pub struct ZebratronSystem {
+    cpu: Cpu,      // From core
+    ppu: Ppu,      // From core
+    apu: Apu,      // From core
+    memory: Memory // From core
+}
+
+#[wasm_bindgen]
+impl ZebratronSystem {
+    pub fn step_frame(&mut self) -> bool {
+        // Same engine logic
+    }
+}
+```
+
+**Native runtime** (runtime-native/src/main.rs):
+```rust
+use zebratron_core::{Cpu, Ppu, Apu, Memory};
+use minifb::{Window, WindowOptions};
+
+struct NativeSystem {
+    cpu: Cpu,      // Same core
+    ppu: Ppu,      // Same core
+    apu: Apu,      // Same core
+    memory: Memory // Same core
+}
+
+fn main() {
+    let mut system = NativeSystem::new();
+    let mut window = Window::new("Zebratron", 320, 240, WindowOptions::default()).unwrap();
+
+    while window.is_open() {
+        system.step_frame(); // Same engine logic
+        window.update_with_buffer(&system.get_framebuffer(), 320, 240).unwrap();
+    }
+}
+```
+
+### Why This Is Simple
+
+1. **Core engine unchanged** - CPU/PPU/APU work identically everywhere
+2. **Same game logic** - Cartridges use the same API on both platforms
+3. **No code duplication** - Both runtimes are thin wrappers around core
+4. **Easy maintenance** - Fix a bug once, both platforms benefit
+
+### Build Commands
+
+```bash
+# Build for web (current workflow)
+cd runtime-web
+wasm-pack build --target web
+
+# Build for Raspberry Pi native
+cd runtime-native
+cargo build --release --target aarch64-unknown-linux-gnu
+
+# Or build directly on Pi
+cargo build --release
+```
+
+### Migration Path
+
+**Phase 1: Test kiosk mode first** (fastest)
+- Use current web build in Chromium kiosk mode on Pi
+- Validate hardware, benchmark performance
+- **Time: 30 minutes setup**
+
+**Phase 2: Native port** (if needed for performance)
+- Restructure: Move core to separate crate
+- Create runtime-native with minifb/CPAL/gilrs
+- Keep runtime-web working
+- **Time: 1-2 weeks**
+
+**Phase 3: Optimize** (optional)
+- GPU acceleration
+- Custom Linux image
+- Auto-boot configuration
+- **Time: 2-3 weeks**
+
+### The Bottom Line
+
+**You're not rewriting anything.** You're just:
+1. Moving core engine to library crate (refactor, not rewrite)
+2. Adding a new native main.rs (200-300 lines)
+3. Keeping web runtime working
+
+The "complex trait abstraction" approach is overkill. This simpler structure is easier to understand and maintain.
+
 ## Implementation Options
 
 ### Option A: Native Rust with minifb (Easiest - 1-2 weeks)

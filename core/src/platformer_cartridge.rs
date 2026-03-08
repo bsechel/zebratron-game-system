@@ -111,6 +111,23 @@ const HAMBERT_JUMP_SPRITE: [[u8; 24]; 24] = [
     [0, 0, 0, 0, 0, 0, 0, 16, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 ];
 
+// Punch fist sprite - 12×12 yellow fist that appears when punching (0 = transparent)
+// Using yellow palette indices: 37 (bright yellow), 39 (yellow-orange), 41 (gold)
+const PUNCH_FIST_SPRITE: [[u8; 12]; 12] = [
+    [0, 0, 0, 37, 37, 37, 37, 0, 0, 0, 0, 0],
+    [0, 0, 37, 39, 39, 39, 39, 37, 0, 0, 0, 0],
+    [0, 37, 39, 37, 37, 37, 37, 39, 37, 0, 0, 0],
+    [37, 39, 37, 37, 37, 37, 37, 37, 39, 37, 0, 0],
+    [37, 39, 37, 37, 37, 37, 37, 37, 39, 37, 37, 37],
+    [37, 39, 37, 37, 37, 37, 37, 37, 39, 37, 39, 37],
+    [37, 39, 37, 37, 37, 37, 37, 37, 39, 37, 39, 37],
+    [37, 39, 37, 37, 37, 37, 37, 37, 39, 39, 39, 37],
+    [0, 37, 39, 37, 37, 37, 37, 39, 39, 39, 37, 0],
+    [0, 0, 37, 39, 39, 39, 39, 39, 39, 37, 0, 0],
+    [0, 0, 0, 37, 37, 37, 37, 37, 37, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+];
+
 // Glowing hexagon projectile - 6×6 small glowing hexagon (255 = transparent)
 // Uses green palette indices 48-54 for energy cycling effect
 const HEXAGON_PROJECTILE_SPRITE: [[u8; 6]; 6] = [
@@ -220,6 +237,16 @@ pub enum PlayerState {
     Jumping,
     Falling,
     Swimming,
+}
+
+// Sprite data for rendering
+#[derive(Debug, Clone)]
+pub struct RenderSprite {
+    pub x: f32,
+    pub y: f32,
+    pub sprite_data: Vec<Vec<u8>>,
+    pub flip_horizontal: bool,
+    pub scale: f32, // Scale multiplier (1.0 = normal, 4.0 = giant)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -831,6 +858,69 @@ impl PlatformerCartridge {
         "Simple Platformer"
     }
 
+    // Get all sprites that need to be rendered this frame
+    pub fn get_all_sprites(&self) -> Vec<RenderSprite> {
+        let mut sprites = Vec::new();
+
+        // Add player sprite
+        let animation_frame = self.animation_frame;
+        let sprite_data = self.get_sprite_data(animation_frame);
+        let sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
+        sprites.push(RenderSprite {
+            x: self.player_x,
+            y: self.player_y,
+            sprite_data: sprite_vec,
+            flip_horizontal: !self.facing_right, // Flip when facing left
+            scale: 1.0,
+        });
+
+        // Add punch fist sprite if punching
+        if self.is_punching {
+            let (punch_x, punch_y) = self.get_punch_position();
+            let punch_sprite = PlatformerCartridge::get_punch_fist_sprite();
+            let punch_vec: Vec<Vec<u8>> = punch_sprite.iter().map(|row| row.to_vec()).collect();
+            sprites.push(RenderSprite {
+                x: punch_x,
+                y: punch_y,
+                sprite_data: punch_vec,
+                flip_horizontal: self.facing_right, // Flip when facing right (fist sprite faces left by default)
+                scale: 1.0,
+            });
+        }
+
+        // Add hexagnome sprites
+        for hexagnome in &self.hexagnomes {
+            if hexagnome.active {
+                let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
+                let hex_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
+                sprites.push(RenderSprite {
+                    x: hexagnome.x,
+                    y: hexagnome.y,
+                    sprite_data: hex_vec,
+                    flip_horizontal: hexagnome.facing_right,
+                    scale: 1.0,
+                });
+            }
+        }
+
+        // Add projectile sprites
+        for projectile in &self.projectiles {
+            if projectile.active {
+                let proj_sprite = PlatformerCartridge::get_projectile_sprite();
+                let proj_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
+                sprites.push(RenderSprite {
+                    x: projectile.x,
+                    y: projectile.y,
+                    sprite_data: proj_vec,
+                    flip_horizontal: false,
+                    scale: 1.0,
+                });
+            }
+        }
+
+        sprites
+    }
+
     pub fn get_lives(&self) -> u32 {
         self.lives
     }
@@ -876,6 +966,10 @@ impl PlatformerCartridge {
         &HEART_SPRITE
     }
 
+    pub fn get_punch_fist_sprite() -> &'static [[u8; 12]; 12] {
+        &PUNCH_FIST_SPRITE
+    }
+
     // Get palette cycle phase for a projectile (0-3 for energy cycling effect)
     pub fn get_projectile_palette_cycle(timer: f32) -> u8 {
         ((timer / 8.0) as u32 % 4) as u8
@@ -883,6 +977,26 @@ impl PlatformerCartridge {
 
     pub fn is_invulnerable(&self) -> bool {
         self.invulnerability_timer > 0.0
+    }
+
+    pub fn is_punching(&self) -> bool {
+        self.is_punching
+    }
+
+    pub fn get_punch_position(&self) -> (f32, f32) {
+        const PLAYER_HALF_WIDTH: f32 = 12.0; // Hambert sprite is 24px wide
+        const FIST_WIDTH: f32 = 12.0; // Punch fist sprite is 12px wide
+        const PUNCH_OFFSET_LEFT: f32 = 2.0; // Distance from player when facing left
+        const PUNCH_Y_OFFSET: f32 = 5.0; // Vertical offset from player center (arm level)
+
+        let (punch_x, punch_y) = if self.facing_right {
+            // Facing right: fist appears at right edge of player, shifted 1px right
+            (self.player_x + PLAYER_HALF_WIDTH + 1.0, self.player_y + PUNCH_Y_OFFSET)
+        } else {
+            // Facing left: fist appears close to left edge of player
+            (self.player_x - PLAYER_HALF_WIDTH - PUNCH_OFFSET_LEFT, self.player_y + PUNCH_Y_OFFSET)
+        };
+        (punch_x, punch_y)
     }
 
     // Sound effect management

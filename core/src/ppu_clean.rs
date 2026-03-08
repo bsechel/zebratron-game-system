@@ -269,6 +269,7 @@ pub struct SpriteWithData {
     pub active: bool,
     pub flip_horizontal: bool,
     pub palette_cycle: u8, // For energy/palette cycling effects (0-3)
+    pub scale: f32, // Scale multiplier (1.0 = normal, 4.0 = giant)
 }
 
 pub struct Ppu {
@@ -425,11 +426,11 @@ impl Ppu {
         });
     }
     
-    pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool) {
-        self.add_sprite_with_data_and_cycle(x, y, pixel_data, active, flip_horizontal, 0);
+    pub fn add_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool, scale: f32) {
+        self.add_sprite_with_data_and_cycle(x, y, pixel_data, active, flip_horizontal, 0, scale);
     }
 
-    pub fn add_sprite_with_data_and_cycle(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool, palette_cycle: u8) {
+    pub fn add_sprite_with_data_and_cycle(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], active: bool, flip_horizontal: bool, palette_cycle: u8, scale: f32) {
         self.sprites_with_data.push(SpriteWithData {
             x,
             y,
@@ -437,6 +438,7 @@ impl Ppu {
             active,
             flip_horizontal,
             palette_cycle,
+            scale,
         });
     }
 
@@ -623,7 +625,7 @@ impl Ppu {
         // Render new-style sprites (with pixel data)
         for sprite in &sprites_with_data {
             if sprite.active {
-                self.render_sprite_with_data(sprite.x - scroll_x, sprite.y - scroll_y, &sprite.pixel_data, sprite.flip_horizontal, sprite.palette_cycle);
+                self.render_sprite_with_data(sprite.x - scroll_x, sprite.y - scroll_y, &sprite.pixel_data, sprite.flip_horizontal, sprite.palette_cycle, sprite.scale);
             }
         }
 
@@ -2020,7 +2022,7 @@ impl Ppu {
         }
     }
     
-    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool, palette_cycle: u8) {
+    fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool, palette_cycle: u8, scale: f32) {
         if pixel_data.is_empty() {
             return;
         }
@@ -2029,6 +2031,7 @@ impl Ppu {
         let sprite_y = y as i32;
         let sprite_height = pixel_data.len();
         let sprite_width = pixel_data[0].len();
+        let scale_int = scale as i32; // Convert to integer for pixel repetition
 
         // Render variable-sized sprite with pixel data from cartridge
         for (row, sprite_row) in pixel_data.iter().enumerate() {
@@ -2060,18 +2063,29 @@ impl Ppu {
                     col
                 };
 
-                let pixel_x = sprite_x + actual_col as i32 - (sprite_width / 2) as i32; // Center the sprite
-                let pixel_y = sprite_y + row as i32 - (sprite_height / 2) as i32;
+                // Calculate base position (with scaling applied to centering offset)
+                let scaled_width = (sprite_width as i32) * scale_int;
+                let scaled_height = (sprite_height as i32) * scale_int;
+                let base_pixel_x = sprite_x + (actual_col as i32 * scale_int) - (scaled_width / 2);
+                let base_pixel_y = sprite_y + (row as i32 * scale_int) - (scaled_height / 2);
 
-                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 &&
-                   pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
-                    let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
-                    if idx < self.screen_buffer.len() - 3 {
-                        let color = self.palette[cycled_index as usize];
-                        self.screen_buffer[idx] = color.0;
-                        self.screen_buffer[idx + 1] = color.1;
-                        self.screen_buffer[idx + 2] = color.2;
-                        self.screen_buffer[idx + 3] = 255;
+                // For nearest-neighbor scaling, repeat each pixel scale×scale times
+                for dy in 0..scale_int {
+                    for dx in 0..scale_int {
+                        let pixel_x = base_pixel_x + dx;
+                        let pixel_y = base_pixel_y + dy;
+
+                        if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 &&
+                           pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
+                            let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                            if idx < self.screen_buffer.len() - 3 {
+                                let color = self.palette[cycled_index as usize];
+                                self.screen_buffer[idx] = color.0;
+                                self.screen_buffer[idx + 1] = color.1;
+                                self.screen_buffer[idx + 2] = color.2;
+                                self.screen_buffer[idx + 3] = 255;
+                            }
+                        }
                     }
                 }
             }
