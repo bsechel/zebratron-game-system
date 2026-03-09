@@ -386,27 +386,6 @@ impl ZebratronCartridgeSystem {
                         // Clear existing sprites
                         self.ppu.clear_sprites();
 
-                        // Add hexagnome sprites
-                        let hexagnomes = cartridge.get_hexagnomes();
-                        for hexagnome in hexagnomes {
-                            let hex_sprite = PlatformerCartridge::get_hexagnome_sprite();
-                            let hex_sprite_vec: Vec<Vec<u8>> = hex_sprite.iter().map(|row| row.to_vec()).collect();
-                            // Flip horizontally when facing right (hexagnome sprite faces left by default)
-                            let flip_horizontal = hexagnome.facing_right;
-                            self.ppu.add_sprite_with_data(hexagnome.x, hexagnome.y, &hex_sprite_vec, true, flip_horizontal);
-                        }
-
-                        // Add projectile sprites with palette cycling for energy effect
-                        let projectiles = cartridge.get_projectiles();
-                        for projectile in projectiles {
-                            if projectile.active {
-                                let proj_sprite = PlatformerCartridge::get_projectile_sprite();
-                                let proj_sprite_vec: Vec<Vec<u8>> = proj_sprite.iter().map(|row| row.to_vec()).collect();
-                                let palette_cycle = PlatformerCartridge::get_projectile_palette_cycle(projectile.palette_cycle_timer);
-                                self.ppu.add_sprite_with_data_and_cycle(projectile.x, projectile.y, &proj_sprite_vec, true, false, palette_cycle);
-                            }
-                        }
-
                         // Update HUD state (lives and invulnerability)
                         let lives = cartridge.get_lives();
                         self.ppu.set_lives(lives);
@@ -415,27 +394,25 @@ impl ZebratronCartridgeSystem {
                         let should_flash = is_invulnerable && ((self.ppu.get_frame_count() / 4) % 2 == 0); // Flash every 4 frames
                         self.ppu.set_player_invulnerability_state(is_invulnerable, should_flash);
 
-                        // Add player sprite (world position - PPU will apply scroll)
-                        let (player_x, player_y) = cartridge.get_player_position();
-                        let animation_frame = cartridge.get_animation_frame();
-                        let sprite_data = cartridge.get_sprite_data(animation_frame);
-                        let flip_horizontal = !cartridge.is_facing_right(); // Flip when facing left
-                        let player_sprite_vec: Vec<Vec<u8>> = sprite_data.iter().map(|row| row.to_vec()).collect();
-
-                        // Only render player if not flashing (invulnerability flash effect)
-                        if !should_flash {
-                            self.ppu.add_sprite_with_data(player_x, player_y, &player_sprite_vec, true, flip_horizontal); // Player sprite with animation
+                        // Get all sprites from cartridge and render them
+                        let sprites = cartridge.get_all_sprites();
+                        for (idx, sprite) in sprites.iter().enumerate() {
+                            // Skip player sprite if invulnerable and flashing
+                            if idx == 0 && should_flash {
+                                continue; // First sprite is always the player
+                            }
+                            self.ppu.add_sprite_with_data(sprite.x, sprite.y, &sprite.sprite_data, true, sprite.flip_horizontal, sprite.scale);
                         }
 
                         // Store debug info for after rendering
-                        self.debug_animation_frame = animation_frame;
+                        self.debug_animation_frame = cartridge.get_animation_frame();
 
                         // Play background music (only if not dying)
                         if cartridge.is_music_enabled() && !cartridge.is_dying() {
                             // Lower the music volume so it doesn't overpower sound effects
-                            self.apu.set_sid_volume(0.3); // 30% volume for background music
-                            self.apu.set_sid_voice2_volume(0.3); // Lead melody at 30% of voice volume
-                            self.apu.set_sid_voice3_volume(0.3); // Upper harmony at 30% of voice volume
+                            self.apu.set_sid_volume(0.2); // 20% volume for background music (lowered from 30%)
+                            self.apu.set_sid_voice2_volume(0.2); // Lead melody at 20% of voice volume
+                            self.apu.set_sid_voice3_volume(0.2); // Upper harmony at 20% of voice volume
                             self.play_platformer_midi_music(
                                 cartridge.get_current_lead_note(),
                                 cartridge.get_current_upper_note(),
@@ -550,6 +527,7 @@ impl ZebratronCartridgeSystem {
             6 => self.apu.play_laugh_sample(), // Laughter
             7 => self.apu.play_voice_effect(1), // Gasp
             8 => self.apu.play_voice_effect(2), // Grunt
+            10 => self.play_punch_sound(),    // Punch attack
             _ => {}, // Unknown sound
         }
     }
@@ -590,6 +568,11 @@ impl ZebratronCartridgeSystem {
         self.apu.play_sound_effect(84, 36, 1, 1.0); // C6 down to C2, sawtooth, 1 second
     }
 
+    fn play_punch_sound(&mut self) {
+        // Powerful punch sound - bass sweep for impact
+        self.apu.play_sound_effect(72, 24, 0, 0.12); // C5 to C1, pulse wave, 120ms - sharp descending punch
+    }
+
     fn play_platformer_sound_effect(&mut self, sound_id: u32) {
         match sound_id {
             0 => self.play_jump_sound(),
@@ -599,6 +582,7 @@ impl ZebratronCartridgeSystem {
             4 => self.play_enemy_hit_sound(),
             7 => self.play_text_blip_sound(),  // Text typing blip (like NES RPGs)
             8 => self.play_death_sound(),      // Death sound (Hambert flies off screen)
+            10 => self.play_punch_sound(),     // Punch attack
             _ => {} // Unknown sound ID
         }
     }
