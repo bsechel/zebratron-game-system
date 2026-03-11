@@ -326,6 +326,7 @@ pub struct Ppu {
     
     // HUD/UI data
     hud_lives: u8,
+    hud_hamberries: u32,
     player_dying: bool,
     player_death_flash: bool,
     player_invulnerable: bool,
@@ -335,6 +336,10 @@ pub struct Ppu {
     platformer_tiles: Option<Vec<Vec<u8>>>,
     // Platformer tileset pixel data (256 tiles, 16×16 pixels each)
     platformer_tileset: Option<Vec<[[u8; 16]; 16]>>,
+
+    // Pre-rendered hill layers for smooth scrolling
+    hill_layer_far: Vec<u8>,    // Far hills height map (width: 1024)
+    hill_layer_near: Vec<u8>,   // Near hills height map (width: 1024)
 }
 
 impl Ppu {
@@ -369,13 +374,73 @@ impl Ppu {
             cutscene_scroll_offset: 0.0,
             cutscene_char_index: 0,
             hud_lives: 3,
+            hud_hamberries: 0,
             player_dying: false,
             player_death_flash: false,
             player_invulnerable: false,
             player_invul_flash: false,
             platformer_tiles: None,
             platformer_tileset: None,
+            hill_layer_far: Self::generate_hill_layer_far(1024),
+            hill_layer_near: Self::generate_hill_layer(1024, 1.2, 2.3),
         }
+    }
+
+    // Generate far hill layer with more crests and higher peaks
+    fn generate_hill_layer_far(width: usize) -> Vec<u8> {
+        use std::f32::consts::PI;
+        let mut layer = Vec::with_capacity(width);
+
+        for x in 0..width {
+            // Calculate amplitude scale based on position (0.0 to 1.0 across buffer)
+            let progress = (x as f32) / (width as f32);
+            let amplitude_scale = 0.2 + (progress * 0.8); // Start at 20%, grow to 100%
+
+            let world_x = (x as f32) * 0.01;
+            // More waves with higher amplitude for dramatic far mountains
+            let height = 40.0 +
+                        20.0 * amplitude_scale * (world_x * 0.6).sin() +   // Main rolling wave
+                        12.0 * amplitude_scale * (world_x * 1.3).sin() +   // Secondary crests
+                        6.0 * amplitude_scale * (world_x * 2.7).sin();     // Fine detail
+            // Store as u8 (0-255 range)
+            layer.push(height.clamp(0.0, 255.0) as u8);
+        }
+
+        // Apply smoothing pass to reduce jaggedness
+        let mut smoothed = layer.clone();
+        for x in 1..(width - 1) {
+            smoothed[x] = ((layer[x - 1] as u16 + layer[x] as u16 * 2 + layer[x + 1] as u16) / 4) as u8;
+        }
+
+        smoothed
+    }
+
+    // Generate a pre-rendered hill layer with given parameters
+    // Hills start flat and grow in amplitude across the buffer
+    fn generate_hill_layer(width: usize, freq1: f32, freq2: f32) -> Vec<u8> {
+        use std::f32::consts::PI;
+        let mut layer = Vec::with_capacity(width);
+
+        for x in 0..width {
+            // Calculate amplitude scale based on position (0.0 to 1.0 across buffer)
+            let progress = (x as f32) / (width as f32);
+            let amplitude_scale = 0.2 + (progress * 0.8); // Start at 20%, grow to 100%
+
+            let world_x = (x as f32) * 0.01; // Reduced frequency for smoother hills
+            let height = 30.0 +
+                        15.0 * amplitude_scale * (world_x * freq1).sin() +
+                        8.0 * amplitude_scale * (world_x * freq2).sin();
+            // Store as u8 (0-255 range)
+            layer.push(height.clamp(0.0, 255.0) as u8);
+        }
+
+        // Apply smoothing pass to reduce jaggedness
+        let mut smoothed = layer.clone();
+        for x in 1..(width - 1) {
+            smoothed[x] = ((layer[x - 1] as u16 + layer[x] as u16 * 2 + layer[x + 1] as u16) / 4) as u8;
+        }
+
+        smoothed
     }
 
     pub fn step(&mut self, _memory: &Memory) -> bool {
@@ -532,6 +597,10 @@ impl Ppu {
         self.hud_lives = lives as u8;
     }
 
+    pub fn set_hamberries(&mut self, hamberries: u32) {
+        self.hud_hamberries = hamberries;
+    }
+
     pub fn set_player_death_state(&mut self, is_dying: bool, should_flash: bool) {
         self.player_dying = is_dying;
         self.player_death_flash = should_flash;
@@ -595,7 +664,7 @@ impl Ppu {
 
     fn render_platformer(&mut self) {
         // Clear screen with a different background color (sky)
-        let bg_color = self.palette[72]; // Sky color
+        let bg_color = self.palette[65]; // Sky color
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -632,8 +701,11 @@ impl Ppu {
         // Render lives hearts in top-right corner
         self.render_hearts();
 
-        // Render simple text
-        self.render_text("PLATFORMER", 10, 10, (255, 255, 255));
+        // Render Hamberry count in HUD (next to the icon at x:18, y:10)
+        let count_text = format!("x{}", self.hud_hamberries);
+        self.render_text(&count_text, 20, 11, (255, 255, 255));
+
+        // Render debug coordinates
         self.render_debug_coordinates();
     }
 
@@ -1778,14 +1850,17 @@ impl Ppu {
     }
 
     fn render_platformer_background(&mut self) {
-        // Simple clouds in sky  
+        // Draw rolling hills in background (with parallax)
+        self.render_distant_hills();
+
+        // Simple clouds in sky
         let cloud_color = self.palette[63]; // Light gray
-        
+
         // Draw simple cloud shapes
         for cloud_x in [50, 150, 250] {
             self.render_platformer_cloud(cloud_x, 30);
         }
-        
+
         // Simple sun
         let sun_color = self.palette[52]; // Yellow
         for y in 20..35 {
@@ -1805,7 +1880,7 @@ impl Ppu {
 
     fn render_platformer_cloud(&mut self, center_x: usize, center_y: usize) {
         let cloud_color = self.palette[63]; // Light gray
-        
+
         // Draw a simple cloud shape
         for y in (center_y.saturating_sub(5))..(center_y + 5) {
             for x in (center_x.saturating_sub(15))..(center_x + 15) {
@@ -1821,6 +1896,55 @@ impl Ppu {
                             self.screen_buffer[idx + 3] = 255;
                         }
                     }
+                }
+            }
+        }
+    }
+
+    fn render_distant_hills(&mut self) {
+        // Get scroll position for parallax effect
+        let scroll_x = self.scroll_x as f32;
+
+        // Layer 1: Far distant hills (back layer, slowest parallax)
+        let far_color = self.palette[78]; // Back hill color
+        let parallax_1 = (scroll_x * 0.1) as usize; // Move at 10% of camera speed
+
+        for x in 0..SCREEN_WIDTH {
+            // Sample from pre-rendered buffer with wrapping (simple integer lookup)
+            let buffer_x = (x + parallax_1) % self.hill_layer_far.len();
+            let height = self.hill_layer_far[buffer_x];
+            let hill_y = (180 - height as usize).min(SCREEN_HEIGHT); // Base position
+
+            // Fill from hill peak to bottom of screen
+            for y in hill_y..SCREEN_HEIGHT {
+                let idx = (y * SCREEN_WIDTH + x) * 4;
+                if idx < self.screen_buffer.len() - 3 {
+                    self.screen_buffer[idx] = far_color.0;
+                    self.screen_buffer[idx + 1] = far_color.1;
+                    self.screen_buffer[idx + 2] = far_color.2;
+                    self.screen_buffer[idx + 3] = 255;
+                }
+            }
+        }
+
+        // Layer 2: Closer hills (front layer, faster parallax)
+        let near_color = self.palette[77]; // Front hill color
+        let parallax_2 = (scroll_x * 0.2) as usize; // Move at 20% of camera speed
+
+        for x in 0..SCREEN_WIDTH {
+            // Sample from pre-rendered buffer with wrapping (simple integer lookup)
+            let buffer_x = (x + parallax_2) % self.hill_layer_near.len();
+            let height = self.hill_layer_near[buffer_x];
+            let hill_y = (195 - height as usize).min(SCREEN_HEIGHT); // Base position
+
+            // Fill from hill peak to bottom of screen
+            for y in hill_y..SCREEN_HEIGHT {
+                let idx = (y * SCREEN_WIDTH + x) * 4;
+                if idx < self.screen_buffer.len() - 3 {
+                    self.screen_buffer[idx] = near_color.0;
+                    self.screen_buffer[idx + 1] = near_color.1;
+                    self.screen_buffer[idx + 2] = near_color.2;
+                    self.screen_buffer[idx + 3] = 255;
                 }
             }
         }
@@ -1920,8 +2044,8 @@ impl Ppu {
                    pixel_y >= 0.0 && pixel_y < SCREEN_HEIGHT as f32 {
                     let palette_index = tile_pixels[dy][dx];
 
-                    // Skip transparent pixels (palette index 255 = transparent from PNG alpha)
-                    if palette_index == 255 {
+                    // Skip transparent pixels (palette index 0 or 255)
+                    if palette_index == 0 || palette_index == 255 {
                         continue;
                     }
 

@@ -1,14 +1,18 @@
-# ZebratronGameSystem
+# Zebratron Game System (ZGS)
 
-> **🎮 An Imaginary Console Aiming to Become Real**
-> 
-> ZebratronGameSystem is a modern implementation of a classic 8-bit console that never existed - but should have. Think of it as a "fantasy console" designed with authentic hardware constraints. We're making the software first and then working toward a prototype.
+> **🎮 A Game Console with a Dream**
+>
+> The Zebratron Game System is a modern implementation of a classic 8-bit console that didn't quite exist. It's a low-key "fantasy console" designed to emulate authentic hardware constraints. We're making the software version first, and then working toward a prototype.
 
 > **⚠️ Experimental Prototype Phase**
-> This project is currently in early experimental development. The architecture, APIs, and functionality are rapidly evolving and subject to significant changes. Not recommended for production use at this time.
+> This project is currently in early experimental development. The architecture, APIs, and functionality are evolving and subject to significant changes. Not recommended for production use at this time.
 
 <div align="center">
-  <img src="zebratron-game-system.png" alt="ZebratronGameSystem Logo" width="400">
+  <img src="docs/assets/zebratron-game-system.png" alt="ZebratronGameSystem Logo" width="400"> 
+  <br><br>
+  <img src="docs/assets/HambertGameScreen.png" alt="ZebratronGameSystem Screenshot" width="600">
+  <br>
+  <em>Hambert on Miracle Mountaintop</em>
 </div>
 
 A modern 8-bit game system inspired by classic retro consoles, designed to run at 60fps in web browsers using WebAssembly. Built with a focus on making scrolling games and classic arcade-style games easy to develop, with the long-term vision of becoming actual retro gaming hardware.
@@ -18,9 +22,10 @@ A modern 8-bit game system inspired by classic retro consoles, designed to run a
 > **📝 Character Attribution**
 > The "Zebratron" name and the Zebratron and Hambert characters featured in this system are created and copyrighted by the artist Christopher Graybill and [Zebratron.com](https://zebratron.com), and are inspired by the original Zebratron zines and video animation series.
 
-## 🎮 System Specifications
+## System Specifications
 
 ### Hardware Specs
+
 - **CPU**: Virtual 8-bit processor (WebAssembly implementation)
 - **Resolution**: 320×240 pixels (4:3 aspect ratio)
 - **Colors**: 256 color palette, 64 simultaneous on-screen colors
@@ -30,6 +35,7 @@ A modern 8-bit game system inspired by classic retro consoles, designed to run a
 - **Storage**: Up to 2MB ROM cartridges + optional RAM
 
 ### Developer Features
+
 - **Scrolling Engine**: Built-in smooth scrolling with parallax layer support
 - **Sprite System**: Automatic sprite management with hardware collision detection
 - **Asset Pipeline**: Tools to convert modern graphics/audio to system formats
@@ -40,11 +46,13 @@ A modern 8-bit game system inspired by classic retro consoles, designed to run a
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - Rust toolchain with `wasm-pack`
 - Modern web browser with WebAssembly support
 
 ### Quick Start
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/ZebratronGameSystem.git
@@ -73,16 +81,20 @@ npm run dev
 ## 🎮 Running the Demo
 
 ### Start the Demo Server
+
 ```bash
 cd runtime
 npm run dev
 ```
 
 ### Open the Demo
+
 Navigate to **http://localhost:5173** in your browser.
 
 ### Demo Features
+
 The demo includes:
+
 - **Interactive Game System**: Full 8-bit emulation running in WebAssembly
 - **Live Display**: 320×240 pixel canvas with test pattern rendering
 - **Real-time Debug Info**: CPU registers, memory state, and FPS counter
@@ -92,11 +104,13 @@ The demo includes:
 ### How to Use the Demo
 
 #### 1. **System Controls**
+
 - **Start System**: Loads test ROM and begins emulation
 - **Stop System**: Halts emulation
 - **Reset System**: Resets CPU and memory to initial state
 
 #### 2. **Game Controls** (when system is running)
+
 - **Arrow Keys or WASD**: D-pad movement
 - **Z or Spacebar**: A button
 - **X or Left Shift**: B button
@@ -104,17 +118,21 @@ The demo includes:
 - **Enter**: Start button
 
 #### 3. **Visual Output**
+
 - **Main Display**: Shows rendered graphics (test pattern by default)
 - **Status Indicator**: Shows system state (Initializing → Ready → Running)
 - **FPS Counter**: Real-time frame rate (should show ~60fps)
 
 #### 4. **Debug Information**
+
 The debug panel displays:
+
 ```
 CPU: PC=$8000 A=$00 X=$00 Y=$00
 SP=$FD Status=$24 Cycles: 12345
 FPS: 60
 ```
+
 - **PC**: Program Counter (current instruction address)
 - **A, X, Y**: CPU registers
 - **SP**: Stack Pointer
@@ -124,6 +142,7 @@ FPS: 60
 ### Troubleshooting
 
 #### Demo Won't Start
+
 ```bash
 # Make sure you're in the runtime directory
 cd runtime
@@ -139,6 +158,7 @@ npm run dev
 ```
 
 #### TypeScript Errors
+
 ```bash
 # Check for build errors
 npm run build
@@ -148,6 +168,7 @@ npm run typecheck
 ```
 
 #### WebAssembly Issues
+
 ```bash
 # Verify Rust toolchain
 rustc --version
@@ -170,6 +191,7 @@ npm run build:wasm
 5. **Smooth Animation**: Pattern should render smoothly without stuttering
 
 ### Demo Architecture
+
 ```
 Browser (JavaScript/TypeScript)
 ├── Canvas Rendering (320×240)
@@ -214,17 +236,20 @@ ZebratronGameSystem/
 ## 🎯 Design Goals
 
 ### Performance
+
 - **60 FPS**: Consistent frame rate in modern browsers
 - **Low Latency**: Sub-frame input response
 - **Memory Efficient**: Optimized for mobile devices
 
 ### Developer Experience
+
 - **Easy Scrolling**: Built-in smooth scrolling eliminates common pain points
 - **Modern Tooling**: Hot reload, debugging, asset pipeline
 - **Simple API**: Minimal learning curve for 8-bit game development
 - **Cross-Platform**: Web-first with potential hardware implementations
 
 ### Authenticity
+
 - **8-Bit Aesthetics**: Enforced palette and sprite limitations
 - **Chip-Tune Audio**: Classic sound synthesis
 - **Scanline Rendering**: Authentic retro visual effects
@@ -235,11 +260,13 @@ ZebratronGameSystem/
 ZebratronGameSystem is designed to evolve from the current hardcoded approach to a true cartridge-based system where games are self-contained, distributable packages.
 
 ### Current State: Hardcoded Cartridges
+
 The system currently ships with built-in game cartridges (Hambert, Z-Synth) where all assets are compiled directly into the WebAssembly binary. This approach works great for the prototype phase but has limitations for content creation and distribution.
 
 ### Future Vision: Self-Contained Cartridge Files
 
 #### `.zgs` Cartridge Format
+
 ```
 game.zgs                    # Single cartridge file
 ├── manifest.toml           # Game metadata and configuration
@@ -259,6 +286,7 @@ game.zgs                    # Single cartridge file
 ```
 
 #### Development Workflow
+
 1. **Asset Creation**: Artists create sprites/audio in standard tools (Aseprite, Audacity, etc.)
 2. **Asset Conversion**: Tools convert modern formats to ZGS-compatible indexed formats
 3. **Game Assembly**: Assets and code are packaged into a single `.zgs` cartridge file
@@ -266,6 +294,7 @@ game.zgs                    # Single cartridge file
 5. **Modding**: Community can modify and create derivative cartridges
 
 #### Technical Benefits
+
 - **True Modularity**: Core system becomes a pure interpreter/VM
 - **Hot Reload**: Live asset updates during development
 - **Version Control**: Assets and code can be managed separately
@@ -275,32 +304,39 @@ game.zgs                    # Single cartridge file
 ### Evolution Phases
 
 #### Phase 1: Asset Data Structures
+
 - Design external asset format (sprites, audio, levels)
 - Implement dynamic asset loading in core system
 - Maintain backward compatibility with existing cartridges
 
 #### Phase 2: Dynamic Rendering Pipeline
+
 - Replace hardcoded sprite rendering with asset-driven system
 - Implement dynamic audio sample loading
 - Add asset caching and memory management
 
 #### Phase 3: Cartridge File Format
+
 - Define `.zgs` file structure and packaging
 - Implement cartridge parsing and validation
 - Add cartridge metadata and dependency management
 
 #### Phase 4: Asset Creation Pipeline
+
 - Build sprite/audio conversion tools
 - Create cartridge packaging utilities
 - Develop visual asset editors and game development tools
 
 #### Phase 5: Distribution Platform
+
 - Cartridge sharing and discovery system
 - Version management and updates
 - Community modding and derivative work support
 
 ### Migration Strategy
+
 The transition from hardcoded to cartridge-based will be gradual:
+
 - Existing games (Hambert, Z-Synth) will be converted to the new format as reference implementations
 - The core system will support both approaches during transition
 - Asset converter tools will help migrate existing content
@@ -311,6 +347,7 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 ## 🛠️ Development Roadmap
 
 ### Phase 1: Core System (Months 1-3)
+
 - [ ] WebAssembly CPU emulator
 - [ ] Basic PPU with tile rendering
 - [ ] Memory management system
@@ -318,6 +355,7 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 - [ ] JavaScript runtime interface
 
 ### Phase 2: Graphics & Audio (Months 4-6)
+
 - [ ] Sprite rendering with collision detection
 - [ ] Multi-layer scrolling engine
 - [ ] Advanced audio features (envelopes, effects)
@@ -325,6 +363,7 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 - [ ] Performance optimization
 
 ### Phase 3: Developer Tools (Months 7-9)
+
 - [ ] Real-time debugger
 - [ ] Visual sprite/tile editor
 - [ ] Game development IDE
@@ -332,6 +371,7 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 - [ ] Example games
 
 ### Phase 4: Advanced Features (Months 10-12)
+
 - [ ] Scripting language integration
 - [ ] Save state system
 - [ ] Networking for multiplayer
@@ -341,9 +381,11 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 ## 🛠️ Developer Guide
 
 ### Build System
+
 ZebratronGameSystem uses a hybrid Rust/TypeScript build system:
 
 #### Prerequisites
+
 ```bash
 # Install Node.js (18+) and Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -355,6 +397,7 @@ brew install rust wasm-pack node
 ```
 
 #### Build Commands
+
 ```bash
 # Install all dependencies
 npm install
@@ -379,12 +422,14 @@ npm run lint
 ```
 
 #### Development Workflow
+
 1. **Core changes** (Rust): Edit `core/src/` → `npm run build:wasm`
 2. **Runtime changes** (TypeScript): Edit `runtime/src/` → auto-reload with `npm run dev`
 3. **Test changes**: `npm test` for unit tests
 4. **Debug**: Use browser DevTools for JavaScript, `console.log!()` macro in Rust
 
 #### Project Structure
+
 ```
 ├── core/           # Rust WebAssembly engine
 │   ├── src/
@@ -408,27 +453,31 @@ npm run lint
 ## 🎨 Artist Guide
 
 ### Color Palette System
+
 ZebratronGameSystem uses a **128-color master palette** designed for pixel art creation.
 
 #### Palette Organization
+
 - **Total colors**: 128 (indices 0-127)
 - **Layout**: 8 rows × 16 columns
 - **Format**: RGB values, palette-indexed rendering
 
 #### Color Families
 
-| Range | Family | Description | Best For |
-|-------|--------|-------------|----------|
-| 0-15 | **Grayscale** | Black to white ramp | Shadows, highlights, monochrome |
-| 16-31 | **Reds** | Deep red to pink tones | Fire, blood, warning elements |
-| 32-47 | **Oranges/Browns** | Warm earth tones | Wood, desert, autumn scenes |
-| 48-63 | **Greens** | Forest to lime greens | Vegetation, nature, UI elements |
-| 64-79 | **Cyans** | Blue-green aquatic tones | Water, ice, cool highlights |
-| 80-95 | **Blues** | Deep navy to bright sky | Sky, water, cool elements |
-| 96-111 | **Purples** | Violet to magenta | Magic, night scenes, accents |
-| 112-127 | **Skin/Earth** | Flesh and natural tones | Characters, dirt, natural objects |
+
+| Range   | Family             | Description              | Best For                          |
+| --------- | -------------------- | -------------------------- | ----------------------------------- |
+| 0-15    | **Grayscale**      | Black to white ramp      | Shadows, highlights, monochrome   |
+| 16-31   | **Reds**           | Deep red to pink tones   | Fire, blood, warning elements     |
+| 32-47   | **Oranges/Browns** | Warm earth tones         | Wood, desert, autumn scenes       |
+| 48-63   | **Greens**         | Forest to lime greens    | Vegetation, nature, UI elements   |
+| 64-79   | **Cyans**          | Blue-green aquatic tones | Water, ice, cool highlights       |
+| 80-95   | **Blues**          | Deep navy to bright sky  | Sky, water, cool elements         |
+| 96-111  | **Purples**        | Violet to magenta        | Magic, night scenes, accents      |
+| 112-127 | **Skin/Earth**     | Flesh and natural tones  | Characters, dirt, natural objects |
 
 #### Artist-Friendly Features
+
 - **16-step grayscale** for excellent shading
 - **8 tones per color family** enable smooth gradients
 - **Dedicated skin tone range** for character art
@@ -436,7 +485,9 @@ ZebratronGameSystem uses a **128-color master palette** designed for pixel art c
 - **Balanced warm/cool distribution** across spectrum
 
 #### Color Test Demo
+
 Press **Enter** in the demo to view all 128 colors:
+
 ```bash
 npm run dev
 # Open http://localhost:5174
@@ -444,6 +495,7 @@ npm run dev
 ```
 
 #### Pixel Art Tips
+
 1. **Use grayscale first** - Design in monochrome, then add color
 2. **Limit per-sprite colors** - 3-4 colors maximum for authentic feel
 3. **Leverage gradients** - Each family has smooth progressions
@@ -451,12 +503,14 @@ npm run dev
 5. **Earth tones for backgrounds** - Natural-looking environments
 
 #### Technical Constraints
+
 - **Sprite sizes**: Flexible (8×8 to 64×64+ supported)
 - **Colors per sprite**: No hard limit, but 3-4 recommended for style
 - **Screen resolution**: 320×240 pixels
 - **Simultaneous sprites**: 128 maximum, 16 per scanline
 
 ### Asset Creation Workflow
+
 1. **Design in external tools** (Aseprite, GIMP, etc.)
 2. **Use palette constraint** - Limit to ZebratronGameSystem colors
 3. **Export as indexed color** - Match to palette indices
@@ -468,6 +522,7 @@ npm run dev
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ### Development Setup
+
 1. Fork and clone the repository
 2. Install dependencies: `npm install`
 3. Build the project: `npm run build:wasm && npm run build`
@@ -484,23 +539,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Inspiration and References
 
 **Hardware Architecture Inspired By:**
+
 - Classic 8-bit game consoles - CPU/PPU/APU separation model and 8-bit gaming architecture
 - [PICO-8 Fantasy Console](https://www.lexaloffle.com/pico-8.php) - Color palette limitations and pixel art constraints
 - [TIC-80 Fantasy Console](https://tic80.com/) - Modern retro development workflow
 
 **Character Assets:**
+
 - **Hambert Boy Sprites** - Character design and pixel art adapted from the original hambertBoy.js game
   - Gray dog character with red boots and distinctive personality
   - 24x20 pixel sprite format with authentic retro styling
   - Walking and idle animations maintaining original charm
 
 **Technical References:**
+
 - [Rust WebAssembly Book](https://rustwasm.github.io/docs/book/) - WASM integration patterns
 - [wasm-pack Guide](https://rustwasm.github.io/wasm-pack/) - Build toolchain setup
 - [6502 CPU Reference](http://6502.org/) - CPU architecture inspiration
 - Classic console development documentation - PPU and memory mapping concepts
 
 **Development Philosophy:**
+
 - **Fantasy Consoles Movement** - Making game development accessible and fun
 - **Retro Gaming Preservation** - Keeping 8-bit aesthetics alive for new generations
 - **Modern Web Performance** - WebAssembly for near-native speed in browsers
@@ -515,6 +574,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Contributors** - Everyone who helps make ZebratronGameSystem better
 
 **Built with love using:**
+
 - Rust + WebAssembly for performance
 - TypeScript + Vite for modern development
 - Canvas 2D API for authentic pixel rendering

@@ -24,3 +24,7 @@ path = "src/katakana_converter.rs"
 [[bin]]
 name = "katakana_test"
 path = "src/katakana_test.rs"
+
+[[bin]]
+name = "convert_hambert_tileset"
+path = "convert_hambert_tileset.rs"

@@ -548,8 +548,8 @@ impl ZebratronCartridgeSystem {
     }
 
     fn play_collect_sound(&mut self) {
-        // Pleasant pickup sound - use timed sound effect
-        self.apu.play_sound_effect(72, 84, 3, 0.2); // C5 to C6, sine wave, 200ms
+        // Pleasant pickup sound - short upward chime/plink
+        self.apu.play_sound_effect(84, 96, 3, 0.1); // C6 to C7, sine wave, 100ms - quick pleasant chime
     }
 
     fn play_enemy_hit_sound(&mut self) {
@@ -601,7 +601,12 @@ impl ZebratronCartridgeSystem {
                 cartridge.get_player_death_flash()
             );
         }
-        
+
+        if let Some(cartridge) = &self.platformer_cartridge {
+            self.ppu.set_lives(cartridge.get_lives());
+            self.ppu.set_hamberries(cartridge.get_hamberries_collected());
+        }
+
         self.ppu.render();
         
         // Debug animation frame indicator removed

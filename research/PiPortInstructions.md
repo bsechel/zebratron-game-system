@@ -150,12 +150,44 @@ cargo build --release
 
 The "complex trait abstraction" approach is overkill. This simpler structure is easier to understand and maintain.
 
-## Implementation Options
+## 2026 Dual-Target Evolution (Official Roadmap)
 
-### Option A: Native Rust with minifb (Easiest - 1-2 weeks)
-- **Pros**: Minimal changes, quick development, maintains existing architecture
-- **Cons**: Requires Linux desktop environment
-- **Best for**: Development kits, proof of concept
+To maintain a fast web-based development cycle while ensuring a high-performance native Raspberry Pi experience, we are adopting a **Feature-Flagged Core** architecture.
+
+### 1. Refactored Core (zebratron-core)
+The `core/` crate will remain the "brain" of the system but will no longer be strictly tied to WASM.
+
+**Cargo.toml Strategy:**
+```toml
+[dependencies]
+# WASM dependencies become optional
+wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", optional = true }
+
+[features]
+default = ["wasm"]
+wasm = ["wasm-bindgen", "web-sys"]
+native = [] # For future native optimizations
+```
+
+### 2. The Native Runtime (runtime-native)
+A new top-level crate will be created to host the native Pi/Desktop version.
+
+- **Graphics:** `minifb` (Low-overhead framebuffer window).
+- **Audio:** `cpal` (Native ALSA/PulseAudio output).
+- **Input:** `gilrs` (Direct USB Gamepad/Controller support).
+
+### 3. Unified Development Workflow
+- **Web:** `wasm-pack build` (Enables `wasm` feature).
+- **Pi:** `cargo run -p runtime-native` (Ignores `wasm` code).
+
+---
+
+## Hardware Integration (2026)
+
+### USB Game Controller Support
+The native runtime will use the `gilrs` crate to provide raw, low-latency access to wired USB controllers. This bypasses the browser's Gamepad API and provides the "zero-lag" feel required for the Miracle Mountaintop platforming.
+
 
 ### Option B: Embedded Linux (2-3 weeks)
 - **Pros**: Console-like experience, boots directly to games
