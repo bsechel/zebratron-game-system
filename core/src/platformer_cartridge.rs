@@ -1,5 +1,5 @@
-// Tileset data - 256 tiles from test_tileset.png
-include!("../../TILESETS/test_tileset_data.rs");
+// Tileset data - Hambert's custom tileset
+include!("../../TILESETS/hambert_tileset_data.rs");
 
 // Auto-generated Hambert sprite data (24x24) from hambert_v3 PNG files
 
@@ -149,6 +149,51 @@ const HEART_SPRITE: [[u8; 8]; 8] = [
     [255,17,18,18,18,18,17,255],
     [255,255,17,18,18,17,255,255],
     [255,255,255,17,17,255,255,255],
+];
+
+// Hamberry collectible sprite - 8×8 berry (255 = transparent)
+// Using red/pink colors for a berry look
+const HAMBERRY_SPRITE: [[u8; 8]; 8] = [
+    [255,255,12,12,255,255,255,255],  // Small stem
+    [255,13,13,13,13,255,255,255],    // Top of berry
+    [13,17,18,18,18,13,255,255],      // Upper body
+    [17,18,18,18,18,17,13,255],       // Middle body (shiny spot)
+    [17,18,18,18,18,18,17,255],       // Lower middle
+    [13,17,18,18,18,17,13,255],       // Lower body
+    [255,13,17,17,17,13,255,255],     // Bottom
+    [255,255,13,13,13,255,255,255],   // Very bottom
+];
+
+// Power Pellet - Round red pellet with glowing Z in center (8x8)
+const POWER_PELLET_SPRITE: [[u8; 8]; 8] = [
+    [255,255,33,33,33,255,255,255],   // Top curve (red)
+    [255,33,33,36,36,33,255,255],     // Upper curve (red with highlight)
+    [33,33,36,52,52,36,33,255],       // Upper middle (Z starts - yellow/white glow)
+    [33,36,52,52,52,52,33,255],       // Middle (glowing Z energy)
+    [33,36,52,52,52,36,33,255],       // Middle (glowing Z continues)
+    [33,33,36,52,36,33,33,255],       // Lower middle
+    [255,33,33,36,33,33,255,255],     // Lower curve
+    [255,255,33,33,33,255,255,255],   // Bottom curve
+];
+
+// Pellet Box - 16x16 pixel box that spawns pellets when hit
+const PELLET_BOX_SPRITE: [[u8; 16]; 16] = [
+    [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
+    [6,24,24,24,24,24,24,24,24,24,24,24,24,24,24,6],
+    [6,24,52,52,52,52,52,52,52,52,52,52,52,52,24,6],
+    [6,24,52,24,24,24,24,24,24,24,24,24,24,52,24,6],
+    [6,24,52,24,255,255,255,255,255,255,255,255,24,52,24,6],
+    [6,24,52,24,255,52,52,52,52,52,52,255,24,52,24,6],
+    [6,24,52,24,255,52,255,255,255,255,52,255,24,52,24,6],
+    [6,24,52,24,255,52,255,36,36,255,52,255,24,52,24,6],  // ? mark top
+    [6,24,52,24,255,52,255,255,36,255,52,255,24,52,24,6],
+    [6,24,52,24,255,52,255,255,255,255,52,255,24,52,24,6],
+    [6,24,52,24,255,52,255,36,255,255,52,255,24,52,24,6],  // ? mark dot
+    [6,24,52,24,255,52,52,52,52,52,52,255,24,52,24,6],
+    [6,24,52,24,255,255,255,255,255,255,255,255,24,52,24,6],
+    [6,24,52,24,24,24,24,24,24,24,24,24,24,52,24,6],
+    [6,24,24,24,24,24,24,24,24,24,24,24,24,24,24,6],
+    [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
 ];
 
 // Level 1 Music - Converted from MIDI (120 BPM)
@@ -316,6 +361,33 @@ pub struct Projectile {
     pub palette_cycle_timer: f32, // For energy palette cycling effect
 }
 
+#[derive(Debug, Clone)]
+pub struct Hamberry {
+    pub x: f32,
+    pub y: f32,
+    pub collected: bool,
+    pub animation_timer: f32, // For bobbing/spinning animation
+}
+
+// Power Pellet - spawns from boxes when hit, rises up, then can be collected
+#[derive(Clone)]
+pub struct PowerPellet {
+    pub x: f32,
+    pub y: f32,
+    pub collected: bool,
+    pub rising: bool,          // True while pellet is rising from box
+    pub rise_timer: f32,       // Timer for rising animation
+    pub animation_timer: f32,  // For pulsing/glowing effect
+}
+
+// Pellet Box - hits from below spawn power pellets
+#[derive(Clone)]
+pub struct PelletBox {
+    pub x: f32,
+    pub y: f32,
+    pub activated: bool,  // True if pellet has already been spawned
+}
+
 pub struct PlatformerCartridge {
     game_state: GameState,
     title_blink_timer: f32, // Timer for blinking "PRESS START"
@@ -354,6 +426,12 @@ pub struct PlatformerCartridge {
     // Enemies/NPCs
     hexagnomes: Vec<Hexagnome>,
     projectiles: Vec<Projectile>,
+    // Collectibles
+    hamberries: Vec<Hamberry>,
+    hamberries_collected: u32,
+    power_pellets: Vec<PowerPellet>,
+    pellet_boxes: Vec<PelletBox>,
+    pellets_collected: u32,
     // Background music
     music_enabled: bool,
     music_timer: f32,
@@ -374,12 +452,11 @@ impl PlatformerCartridge {
         // Level imported from Tiled (test_level.tmx)
         // Tile types: 0=air, 1=solid block, 2=platform (oneway), 3=pitfall (deadly), 4=passage (leads down), 5=water, 6=swim-through
         let tiles: [[u8; 200]; 15] = [
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 3, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -387,8 +464,9 @@ impl PlatformerCartridge {
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17],
+            [17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 18, 0, 0, 0, 0, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17],
         ];
 
         Self {
@@ -423,31 +501,52 @@ impl PlatformerCartridge {
             tiles,
             hexagnomes: vec![
                 Hexagnome {
-                    x: 100.0, y: 192.0, vx: 1.0,
+                    x: 100.0, y: 176.0, vx: 1.0,
                     patrol_left: 50.0, patrol_right: 150.0,
                     facing_right: true, shoot_timer: 0.0,
                     health: 3, active: true
                 },
                 Hexagnome {
-                    x: 400.0, y: 192.0, vx: 1.0,
+                    x: 400.0, y: 176.0, vx: 1.0,
                     patrol_left: 350.0, patrol_right: 450.0,
                     facing_right: true, shoot_timer: 0.0,
                     health: 3, active: true
                 },
                 Hexagnome {
-                    x: 800.0, y: 192.0, vx: 1.0,
+                    x: 800.0, y: 176.0, vx: 1.0,
                     patrol_left: 750.0, patrol_right: 850.0,
                     facing_right: true, shoot_timer: 0.0,
                     health: 3, active: true
                 },
                 Hexagnome {
-                    x: 1200.0, y: 192.0, vx: 1.0,
+                    x: 1200.0, y: 176.0, vx: 1.0,
                     patrol_left: 1150.0, patrol_right: 1250.0,
                     facing_right: true, shoot_timer: 0.0,
                     health: 3, active: true
                 },
             ],
             projectiles: Vec::new(),
+            // Spread Hamberries throughout the level
+            hamberries: vec![
+                Hamberry { x: 200.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 350.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 500.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 650.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 850.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 1000.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 1150.0, y: 180.0, collected: false, animation_timer: 0.0 },
+                Hamberry { x: 1300.0, y: 180.0, collected: false, animation_timer: 0.0 },
+            ],
+            hamberries_collected: 0,
+            // Power pellets start empty, spawned from boxes
+            power_pellets: Vec::new(),
+            // Place 3 pellet boxes on platforms throughout level
+            pellet_boxes: vec![
+                PelletBox { x: 400.0, y: 160.0, activated: false },  // On platform
+                PelletBox { x: 800.0, y: 160.0, activated: false },  // Mid-level
+                PelletBox { x: 1200.0, y: 160.0, activated: false }, // Late-level
+            ],
+            pellets_collected: 0,
             music_enabled: true,
             music_timer: 0.0,
             lead_pattern: 1, // Start with LEVEL1_LEAD
@@ -594,6 +693,11 @@ impl PlatformerCartridge {
             self.start_death_animation();
         }
 
+        // Check if player fell below the level (fell through gaps)
+        if !self.is_dying && self.player_y > 240.0 {
+            self.start_death_animation();
+        }
+
         // Handle death animation
         if self.is_dying {
             self.update_death_animation();
@@ -602,6 +706,15 @@ impl PlatformerCartridge {
         
         // Check punch collisions with enemies
         self.check_punch_collisions();
+
+        // Check Hamberry collection
+        self.check_hamberry_collection();
+
+        // Check power pellet collection
+        self.check_power_pellet_collection();
+
+        // Update power pellets (rising animation)
+        self.update_power_pellets();
 
         // Update hexagnomes
         self.update_hexagnomes();
@@ -659,15 +772,13 @@ impl PlatformerCartridge {
             } else if self.player_vy < 0.0 {
                 // Moving up - hit ceiling
                 self.player_vy = 0.0;
+                // Check if player hit a pellet box from below
+                self.check_pellet_box_hit();
             }
         }
-        
-        // Simple fallback - prevent falling through bottom of world
-        if self.player_y > 230.0 {
-            self.player_y = 230.0;
-            self.player_vy = 0.0;
-            self.on_ground = true;
-        }
+
+        // Don't use a fallback floor - let player fall through gaps and trigger death
+        // (Death is handled by checking if player_y > 240.0)
     }
     
     fn check_tile_collision(&self, x: f32, y: f32) -> bool {
@@ -918,6 +1029,37 @@ impl PlatformerCartridge {
             }
         }
 
+        // Add Hamberry sprites (in world space)
+        for hamberry in &self.hamberries {
+            if !hamberry.collected {
+                let hamberry_sprite = PlatformerCartridge::get_hamberry_sprite();
+                let hamberry_vec: Vec<Vec<u8>> = hamberry_sprite.iter().map(|row| row.to_vec()).collect();
+                sprites.push(RenderSprite {
+                    x: hamberry.x,
+                    y: hamberry.y,
+                    sprite_data: hamberry_vec,
+                    flip_horizontal: false,
+                    scale: 1.0,
+                });
+            }
+        }
+
+        // Add HUD elements (in screen space - add camera_x to keep them fixed)
+        // Hamberry counter icon in top-left
+        let hud_icon_sprite = PlatformerCartridge::get_hamberry_sprite();
+        let hud_icon_vec: Vec<Vec<u8>> = hud_icon_sprite.iter().map(|row| row.to_vec()).collect();
+        sprites.push(RenderSprite {
+            x: self.camera_x + 10.0,  // Fixed to screen
+            y: 10.0,
+            sprite_data: hud_icon_vec,
+            flip_horizontal: false,
+            scale: 1.0,
+        });
+
+        // TODO: Add number sprites for the hamberries_collected count
+        // For now, the count will be self.hamberries_collected
+        // We could render digit sprites here, or use text rendering from PPU
+
         sprites
     }
 
@@ -968,6 +1110,26 @@ impl PlatformerCartridge {
 
     pub fn get_punch_fist_sprite() -> &'static [[u8; 12]; 12] {
         &PUNCH_FIST_SPRITE
+    }
+
+    pub fn get_hamberry_sprite() -> &'static [[u8; 8]; 8] {
+        &HAMBERRY_SPRITE
+    }
+
+    pub fn get_hamberries_collected(&self) -> u32 {
+        self.hamberries_collected
+    }
+
+    pub fn get_pellets_collected(&self) -> u32 {
+        self.pellets_collected
+    }
+
+    pub fn get_power_pellets(&self) -> &Vec<PowerPellet> {
+        &self.power_pellets
+    }
+
+    pub fn get_pellet_boxes(&self) -> &Vec<PelletBox> {
+        &self.pellet_boxes
     }
 
     // Get palette cycle phase for a projectile (0-3 for energy cycling effect)
@@ -1140,8 +1302,8 @@ impl PlatformerCartridge {
             // Set invulnerability period (120 frames = 2 seconds at 60fps)
             self.invulnerability_timer = 120.0;
 
-            // Play damage sound (sound ID 3 for enemy hit, repurpose for player damage)
-            self.pending_sounds.push(3);
+            // Play damage sound (sound ID 9 - PSHHT damage sound)
+            self.pending_sounds.push(9);
 
             // Deactivate hit projectiles
             for &index in hit_indices.iter().rev() {
@@ -1213,6 +1375,126 @@ impl PlatformerCartridge {
 
         // Remove dead hexagnomes
         self.hexagnomes.retain(|h| h.active);
+    }
+
+    fn check_hamberry_collection(&mut self) {
+        // Player collision bounds (simplified)
+        const COLLECTION_RADIUS: f32 = 16.0; // How close player needs to be to collect
+
+        // Sound ID for collection: 3 = collect sound
+        let sound_ids = [3, 3, 3];
+
+        for (idx, hamberry) in self.hamberries.iter_mut().enumerate() {
+            if hamberry.collected {
+                continue;
+            }
+
+            // Check distance between player and hamberry
+            let dx = self.player_x - hamberry.x;
+            let dy = self.player_y - hamberry.y;
+            let distance_squared = dx * dx + dy * dy;
+
+            // If within collection radius, collect it
+            if distance_squared < COLLECTION_RADIUS * COLLECTION_RADIUS {
+                hamberry.collected = true;
+                self.hamberries_collected += 1;
+                // Vary the sound based on which hamberry it is (cycle through 3 tones)
+                let sound_id = sound_ids[idx % 3];
+                self.pending_sounds.push(sound_id);
+            }
+        }
+    }
+
+    fn check_pellet_box_hit(&mut self) {
+        // Check if player's head hit a pellet box from below
+        const HIT_RADIUS: f32 = 8.0; // Horizontal distance to register hit
+        const BOX_HEIGHT: f32 = 16.0; // Box is 16x16 pixels
+
+        // Collect boxes to activate (to avoid borrow checker issues)
+        let mut boxes_to_activate = Vec::new();
+
+        for (idx, pellet_box) in self.pellet_boxes.iter().enumerate() {
+            if pellet_box.activated {
+                continue; // Already used
+            }
+
+            // Check if player is roughly below the box
+            let dx = (self.player_x - pellet_box.x).abs();
+            let dy = pellet_box.y - self.player_y;
+
+            // Player must be within horizontal range and just below the box
+            if dx < HIT_RADIUS && dy > 0.0 && dy < BOX_HEIGHT + 10.0 {
+                boxes_to_activate.push((idx, pellet_box.x, pellet_box.y));
+            }
+        }
+
+        // Activate boxes and spawn pellets
+        for (idx, box_x, box_y) in boxes_to_activate {
+            self.pellet_boxes[idx].activated = true;
+            self.spawn_power_pellet(box_x, box_y);
+            // TODO: Play box hit sound (sound ID TBD)
+            self.pending_sounds.push(6); // Placeholder sound ID
+        }
+    }
+
+    fn spawn_power_pellet(&mut self, box_x: f32, box_y: f32) {
+        // Spawn pellet at box position, it will rise up
+        let pellet = PowerPellet {
+            x: box_x,
+            y: box_y - 8.0, // Start slightly below box
+            collected: false,
+            rising: true,
+            rise_timer: 0.0,
+            animation_timer: 0.0,
+        };
+        self.power_pellets.push(pellet);
+    }
+
+    fn check_power_pellet_collection(&mut self) {
+        const COLLECTION_RADIUS: f32 = 12.0;
+
+        for pellet in self.power_pellets.iter_mut() {
+            if pellet.collected || pellet.rising {
+                continue; // Can't collect while rising
+            }
+
+            let dx = self.player_x - pellet.x;
+            let dy = self.player_y - pellet.y;
+            let distance_squared = dx * dx + dy * dy;
+
+            if distance_squared < COLLECTION_RADIUS * COLLECTION_RADIUS {
+                pellet.collected = true;
+                self.pellets_collected += 1;
+                // TODO: Play pellet collection sound (different from hamberry)
+                self.pending_sounds.push(5); // Placeholder sound ID
+            }
+        }
+    }
+
+    fn update_power_pellets(&mut self) {
+        const RISE_DURATION: f32 = 30.0; // Rise for 30 frames (0.5 seconds at 60fps)
+        const RISE_DISTANCE: f32 = 32.0; // Rise 32 pixels total
+
+        for pellet in self.power_pellets.iter_mut() {
+            if pellet.collected {
+                continue;
+            }
+
+            // Update animation timer for pulsing effect
+            pellet.animation_timer += 1.0;
+
+            if pellet.rising {
+                pellet.rise_timer += 1.0;
+
+                // Move pellet upward
+                pellet.y -= RISE_DISTANCE / RISE_DURATION;
+
+                // Stop rising after duration
+                if pellet.rise_timer >= RISE_DURATION {
+                    pellet.rising = false;
+                }
+            }
+        }
     }
 
     fn update_music(&mut self) {
