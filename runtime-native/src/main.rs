@@ -23,25 +23,46 @@ fn main() {
     // Wrap system in Arc<Mutex> for thread-safe audio access
     let system_arc = Arc::new(Mutex::new(system));
 
-    // Audio setup
+    // Audio setup - Make it non-fatal
     let host = cpal::default_host();
-    let device = host.default_output_device().expect("no output device available");
-    let config = device.default_output_config().unwrap();
-    
-    let system_audio = Arc::clone(&system_arc);
-    let stream = device.build_output_stream(
-        &config.into(),
-        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let mut sys = system_audio.lock().unwrap();
-            for sample in data.iter_mut() {
-                *sample = sys.generate_audio_sample();
+    let stream = match host.default_output_device() {
+        Some(device) => {
+            let config = device.default_output_config().unwrap();
+            let system_audio = Arc::clone(&system_arc);
+            
+            let stream_result = device.build_output_stream(
+                &config.into(),
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    if let Ok(mut sys) = system_audio.try_lock() {
+                        for sample in data.iter_mut() {
+                            *sample = sys.generate_audio_sample();
+                        }
+                    }
+                },
+                |err| eprintln!("🔊 Audio stream error: {}", err),
+                None
+            );
+
+            match stream_result {
+                Ok(s) => {
+                    s.play().unwrap();
+                    println!("🔊 Audio system initialized successfully");
+                    Some(s)
+                },
+                Err(e) => {
+                    eprintln!("🔊 Audio initialization failed: {}. Running in silent mode.", e);
+                    None
+                }
             }
         },
-        |err| eprintln!("an error occurred on stream: {}", err),
-        None
-    ).unwrap();
+        None => {
+            eprintln!("🔊 No audio output device found. Running in silent mode.");
+            None
+        }
+    };
 
-    stream.play().unwrap();
+    // Keep the stream alive
+    let _audio_stream = stream;
 
     // Gamepad setup
     let mut gilrs = Gilrs::new().unwrap();
