@@ -1,7 +1,18 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "wasm")]
 use web_sys::console;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+
+macro_rules! log_internal {
+    ( $( $t:tt )* ) => {
+        #[cfg(feature = "wasm")]
+        console::log_1(&format!( $( $t )* ).into());
+        #[cfg(not(feature = "wasm"))]
+        println!( $( $t )* );
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TileData {
@@ -45,8 +56,8 @@ impl TileSheet {
         let tiles_x = sheet_width / self.tile_width;
         let tiles_y = sheet_height / self.tile_height;
         
-        console::log_1(&format!("Loading tilesheet: {}x{} pixels, {}x{} tiles", 
-            sheet_width, sheet_height, tiles_x, tiles_y).into());
+        log_internal!("Loading tilesheet: {}x{} pixels, {}x{} tiles", 
+            sheet_width, sheet_height, tiles_x, tiles_y);
 
         // Extract each tile
         for tile_y in 0..tiles_y {
@@ -57,7 +68,7 @@ impl TileSheet {
             }
         }
 
-        console::log_1(&format!("Loaded {} tiles from tilesheet", self.tiles.len()).into());
+        log_internal!("Loaded {} tiles from tilesheet", self.tiles.len());
         Ok(())
     }
 
@@ -202,7 +213,7 @@ impl Level {
     }
 
     pub fn load_from_data(&mut self, level_data: &LevelData) -> Result<(), String> {
-        console::log_1(&format!("Loading level: {}", level_data.name).into());
+        log_internal!("Loading level: {}", level_data.name);
         
         // Update dimensions
         self.width = level_data.level_size.width;
@@ -243,7 +254,7 @@ impl Level {
             }
         }
         
-        console::log_1(&format!("Level loaded: {}x{} tiles", self.width, self.height).into());
+        log_internal!("Level loaded: {}x{} tiles", self.width, self.height);
         Ok(())
     }
 
@@ -272,17 +283,17 @@ impl Level {
 }
 
 // WASM bindings for JavaScript interface
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct TileSystem {
     tilesheet: TileSheet,
     level: Level,
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl TileSystem {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new(tile_width: u32, tile_height: u32) -> TileSystem {
-        console::log_1(&"Creating new TileSystem".into());
+        log_internal!("Creating new TileSystem");
         
         TileSystem {
             tilesheet: TileSheet::new(tile_width, tile_height),
@@ -290,60 +301,60 @@ impl TileSystem {
         }
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn load_tilesheet(&mut self, png_data: &[u8], sheet_width: u32, sheet_height: u32) -> bool {
         match self.tilesheet.load_from_png_data(png_data, sheet_width, sheet_height) {
             Ok(_) => {
-                console::log_1(&"Tilesheet loaded successfully".into());
+                log_internal!("Tilesheet loaded successfully");
                 true
             }
             Err(e) => {
-                console::log_1(&format!("Failed to load tilesheet: {}", e).into());
+                log_internal!("Failed to load tilesheet: {}", e);
                 false
             }
         }
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn create_level(&mut self, width: u32, height: u32) {
         self.level = Level::new(width, height);
-        console::log_1(&format!("Created level: {}x{}", width, height).into());
+        log_internal!("Created level: {}x{}", width, height);
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn load_level_json(&mut self, json_data: &str) -> bool {
         // Parse JSON into LevelData first
         match serde_json::from_str::<LevelData>(json_data) {
             Ok(level_data) => {
                 match self.level.load_from_data(&level_data) {
                     Ok(_) => {
-                        console::log_1(&"Level JSON loaded successfully".into());
+                        log_internal!("Level JSON loaded successfully");
                         true
                     }
                     Err(e) => {
-                        console::log_1(&format!("Failed to load level data: {}", e).into());
+                        log_internal!("Failed to load level data: {}", e);
                         false
                     }
                 }
             }
             Err(e) => {
-                console::log_1(&format!("Failed to parse level JSON: {}", e).into());
+                log_internal!("Failed to parse level JSON: {}", e);
                 false
             }
         }
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn get_tile_count(&self) -> usize {
         self.tilesheet.get_tile_count()
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn get_tile_at(&self, x: u32, y: u32) -> u16 {
         self.level.get_tile_at(x, y).unwrap_or(0)
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_tile_at(&mut self, x: u32, y: u32, tile_id: u16) {
         // For now, assume solid collision for non-zero tiles
         let collision = if tile_id == 0 {
@@ -356,7 +367,7 @@ impl TileSystem {
     }
 
     // Get tile pixel data for rendering
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn get_tile_pixels(&self, tile_id: u16) -> Option<Vec<u32>> {
         self.tilesheet.get_tile(tile_id).map(|tile| tile.pixels.clone())
     }

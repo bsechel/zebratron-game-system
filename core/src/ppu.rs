@@ -1,3 +1,4 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use crate::memory::Memory;
 
@@ -312,7 +313,7 @@ impl Entity {
     }
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct Ppu {
     // Screen buffer - RGBA format
     screen_buffer: Vec<u8>,
@@ -354,9 +355,9 @@ pub struct Ppu {
     pending_shuriken: Vec<Entity>,
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl Ppu {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> Ppu {
         let mut ppu = Ppu {
             screen_buffer: vec![0; SCREEN_WIDTH * SCREEN_HEIGHT * 4], // RGBA
@@ -1492,8 +1493,14 @@ impl Ppu {
         }
     }
 
+    #[cfg(feature = "wasm")]
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
         js_sys::Uint8Array::from(&self.screen_buffer[..])
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_screen_buffer_vec(&self) -> Vec<u8> {
+        self.screen_buffer.to_vec()
     }
 
     pub fn get_screen_width(&self) -> u32 {

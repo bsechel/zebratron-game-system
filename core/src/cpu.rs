@@ -1,6 +1,7 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct Cpu {
     // 8-bit registers
     pub a: u8,    // Accumulator
@@ -14,9 +15,9 @@ pub struct Cpu {
     pub cycles: u64,
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl Cpu {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> Cpu {
         Cpu {
             a: 0,

@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "core",
-    "tools/asset-converter"
+    "tools/asset-converter",
+    "runtime-native"
 ]
 resolver = "2"
 

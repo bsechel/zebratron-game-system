@@ -1,3 +1,4 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use crate::memory::Memory;
 use crate::font_system::{FontSystem, Language, get_font_data};
@@ -2217,6 +2218,10 @@ impl Ppu {
     }
 
     pub fn get_screen_buffer(&self) -> Vec<u8> {
+        self.screen_buffer.clone()
+    }
+
+    pub fn get_screen_buffer_vec(&self) -> Vec<u8> {
         self.screen_buffer.clone()
     }
 
