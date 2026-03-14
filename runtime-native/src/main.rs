@@ -25,44 +25,52 @@ fn main() {
 
     // Audio setup - Make it non-fatal
     let host = cpal::default_host();
-    let stream = match host.default_output_device() {
+    let _audio_stream = match host.default_output_device() {
         Some(device) => {
-            let config = device.default_output_config().unwrap();
-            let system_audio = Arc::clone(&system_arc);
-            
-            let stream_result = device.build_output_stream(
-                &config.into(),
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    if let Ok(mut sys) = system_audio.try_lock() {
-                        for sample in data.iter_mut() {
-                            *sample = sys.generate_audio_sample();
+            // Safely try to get default config
+            match device.default_output_config() {
+                Ok(config) => {
+                    let system_audio = Arc::clone(&system_arc);
+                    let stream_result = device.build_output_stream(
+                        &config.into(),
+                        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                            if let Ok(mut sys) = system_audio.try_lock() {
+                                for sample in data.iter_mut() {
+                                    *sample = sys.generate_audio_sample();
+                                }
+                            }
+                        },
+                        |err| eprintln!("🔊 Audio stream error: {}", err),
+                        None
+                    );
+
+                    match stream_result {
+                        Ok(s) => {
+                            if let Ok(_) = s.play() {
+                                println!("🔊 Audio system initialized successfully");
+                                Some(s)
+                            } else {
+                                eprintln!("🔊 Audio failed to start. Running silently.");
+                                None
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("🔊 Audio initialization failed: {}. Running silently.", e);
+                            None
                         }
                     }
                 },
-                |err| eprintln!("🔊 Audio stream error: {}", err),
-                None
-            );
-
-            match stream_result {
-                Ok(s) => {
-                    s.play().unwrap();
-                    println!("🔊 Audio system initialized successfully");
-                    Some(s)
-                },
                 Err(e) => {
-                    eprintln!("🔊 Audio initialization failed: {}. Running in silent mode.", e);
+                    eprintln!("🔊 Could not get audio config: {}. Running silently.", e);
                     None
                 }
             }
         },
         None => {
-            eprintln!("🔊 No audio output device found. Running in silent mode.");
+            eprintln!("🔊 No audio output device found. Running silently.");
             None
         }
     };
-
-    // Keep the stream alive
-    let _audio_stream = stream;
 
     // Gamepad setup
     let mut gilrs = Gilrs::new().unwrap();
