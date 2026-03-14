@@ -1,5 +1,7 @@
 # Raspberry Pi Port Instructions
 
+> **Disclaimer:** These are research notes. The first port attempt is currently in progress.
+
 Guide for porting ZebratronGameSystem to Raspberry Pi hardware.
 
 ## Overview
@@ -180,6 +182,36 @@ A new top-level crate will be created to host the native Pi/Desktop version.
 ### 3. Unified Development Workflow
 - **Web:** `wasm-pack build` (Enables `wasm` feature).
 - **Pi:** `cargo run -p runtime-native` (Ignores `wasm` code).
+
+---
+
+## Physical Cartridge System (2026 Vision)
+
+To move beyond "emulation" and create a true **Zebratron Game System** console, the Pi version supports a physical cartridge slot.
+
+### 1. USB-Based Cartridges
+The simplest implementation uses standard USB flash drives enclosed in a custom 3D-printed or CNC-machined wooden shell.
+
+- **Hardware**: A standard USB-A port is routed to a physical "slot" on the console.
+- **Software**: Linux `udev` rules detect the insertion of a drive and automatically mount it to `/mnt/cartridge`.
+- **Logic**: The ZGS engine looks for a `cartridge.zgs` file with a "Magic Number" (e.g., `0x5A454252` - "ZEBR") to verify authenticity before booting.
+
+### 2. Wider Format Card Edge Connectors
+For a more authentic retro feel, the ZGS uses a "Wider Format" card edge connector (e.g., a 36-pin or 44-pin industrial socket).
+
+- **The Slot**: A standard industrial card edge connector is mounted inside the wooden enclosure.
+- **The Cartridge**: A custom PCB with gold fingers is enclosed in a wide wooden shell. 
+- **Pin Assignment**:
+    - **Pins 1-4**: USB Data (for the game engine).
+    - **Pins 5-6**: Direct MIDI (UART) for low-latency synth input.
+    - **Pins 7-8**: High-quality Analog Audio Out (bypassing Pi PWM).
+    - **Expansion**: Future pins for additional knobs/sliders on the cartridge itself.
+
+### 3. "Fail-Safe" Cartridge Logic
+Following the project's "fail-safe" mandates:
+- **Hot-Swapping**: Pulling a cartridge during play triggers an immediate "Freeze & Return to Splash" state.
+- **Auto-Boot**: The console powers on to a splash screen and only starts the engine once a valid "ZEBR" signature is detected.
+- **Persistence**: Game saves and synth presets are written directly back to the cartridge, making it truly portable between ZGS consoles.
 
 ---
 
@@ -699,3 +731,47 @@ WantedBy=multi-user.target
 Porting to Raspberry Pi is very feasible given the existing Rust codebase. The web version proves the concept works - Pi version just changes the frontend while keeping the proven game engine core.
 
 Most challenging aspects will be audio pipeline and performance optimization, but Pi 4 has more than enough power for the ZebratronGameSystem specifications.
+
+---
+
+## Beyond the Pi: Custom Hardware Kits (Future Roadmap)
+
+While the Raspberry Pi is an excellent development and "Mini-PC" platform, the ultimate goal for the ZebratronGameSystem is a **dedicated hardware console kit**. This involves moving away from a full OS (Linux) to "bare metal" microcontrollers.
+
+### 1. The "Brain" (Microcontroller Selection)
+Since the Zebratron engine is pure Rust, it can be compiled for `#![no_std]` environments (no operating system).
+
+- **RP2040 (Raspberry Pi Pico):** 
+    - **Pros:** Excellent Rust support, dual-core, unique PIO (Programmable I/O) for custom video/audio signals.
+    - **Cost:** ~$1.00 per chip.
+- **ESP32-S3:**
+    - **Pros:** Built-in WiFi/Bluetooth, faster clock speed (240MHz), great for "Connected Console" features.
+    - **Cost:** ~$3.00 per chip.
+
+### 2. Custom PCB Design
+A custom Zebratron PCB would integrate the microcontroller, display connector, battery charging, and physical controls.
+
+- **Prototyping:** 5-10 boards for ~$50-100 via services like JLCPCB.
+- **Production:** Fully assembled boards for ~$5-10 per unit at scale.
+
+### 3. Estimated Hardware Kit BOM (100+ units)
+
+| Component | Estimated Cost (per unit) |
+| :--- | :--- |
+| Assembled Custom PCB (RP2040/ESP32) | $7.00 - $12.00 |
+| 3.5" - 5" SPI/Parallel LCD Screen | $10.00 - $18.00 |
+| Silicone Buttons & D-Pad Membranes | $2.00 - $4.00 |
+| LiPo Battery & Power Management | $5.00 - $8.00 |
+| Enclosure (3D Printed or Injection Molded) | $4.00 - $10.00 |
+| **Total Hardware Target** | **$28.00 - $52.00** |
+
+### 4. Technical Migration Path
+1. **Refactor for `#![no_std]`:** Ensure `zebratron-core` doesn't rely on the standard library (already partially done via the WASM decoupling).
+2. **Hardware Drivers:** Write simple Rust drivers for the specific LCD controller (e.g., ST7789) and audio DAC.
+3. **Firmware Host:** Create a tiny `main.rs` that loops:
+    - Read physical pins (Buttons).
+    - `system.step_frame()`.
+    - Push `screen_buffer` to LCD via high-speed SPI/Parallel.
+
+### 5. Value Proposition
+A dedicated Zebratron kit isn't just a generic emulator; it is a **bespoke creative tool**. By combining the game system with a native **Moroder Phaser** synth and high-quality hardware controls, it becomes a "Pocket Studio" for 8-bit musicians and gamers alike.
