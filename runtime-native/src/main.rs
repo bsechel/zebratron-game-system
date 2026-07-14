@@ -83,7 +83,8 @@ fn main() {
         WIDTH,
         HEIGHT,
         WindowOptions {
-            scale: minifb::Scale::X2,
+            scale: minifb::Scale::FitScreen,
+            resize: true,
             ..WindowOptions::default()
         },
     ).unwrap_or_else(|e| {
@@ -99,6 +100,7 @@ fn main() {
     println!("🔊 Audio Active: SID Synth & Sound Effects");
     println!("⌨️  Controls: Arrows = Move, Z = A Button, X = B Button");
     println!("🎮 Gamepad: D-Pad = Move, South = A Button, East = B Button");
+    println!("🛑 Exit: ESC on Keyboard or SELECT+START on Gamepad");
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // Drain gamepad events to keep internal state up to date
@@ -113,11 +115,11 @@ fn main() {
         let mut right = window.is_key_down(Key::Right);
         let mut a_button = window.is_key_down(Key::Z);
         let mut b_button = window.is_key_down(Key::X);
+        let mut quit_combo = false;
 
         // Combine with Gamepad input (first active gamepad)
         if let Some((_id, gamepad)) = gilrs.gamepads().next() {
             // Specialized Kiwitata / Non-standard controller mapping
-            // Note: These controllers often map L/R to a single 'Right' button value
             if let Some(data) = gamepad.button_data(Button::DPadRight) {
                 let val = data.value();
                 if val > CONTROLLER_RIGHT_THRESHOLD { 
@@ -127,11 +129,20 @@ fn main() {
                 }
             }
 
-            // Standard mappings for other directions and buttons
+            // Standard mappings
             if gamepad.is_pressed(Button::DPadUp) { up = true; }
             if gamepad.is_pressed(Button::DPadDown) { down = true; }
             if gamepad.is_pressed(Button::South) { a_button = true; } 
             if gamepad.is_pressed(Button::East) { b_button = true; }  
+
+            // Exit combo: Select + Start
+            if gamepad.is_pressed(Button::Select) && gamepad.is_pressed(Button::Start) {
+                quit_combo = true;
+            }
+        }
+
+        if quit_combo {
+            break;
         }
 
         sys.handle_input(up, down, left, right, a_button, b_button);

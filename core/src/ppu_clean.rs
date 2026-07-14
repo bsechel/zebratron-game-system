@@ -2225,6 +2225,10 @@ impl Ppu {
         self.screen_buffer.clone()
     }
 
+    pub fn get_screen_buffer_ref(&self) -> &[u8] {
+        &self.screen_buffer
+    }
+
     pub fn get_frame_count(&self) -> u64 {
         self.frame_count
     }

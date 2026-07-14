@@ -593,8 +593,8 @@ impl ZebratronCartridgeSystem {
 
     #[cfg(feature = "wasm")]
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
-        let buffer = self.ppu.get_screen_buffer();
-        js_sys::Uint8Array::from(&buffer[..])
+        let buffer = self.ppu.get_screen_buffer_ref();
+        unsafe { js_sys::Uint8Array::view(buffer) }
     }
 
     #[cfg(not(feature = "wasm"))]

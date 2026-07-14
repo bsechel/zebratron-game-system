@@ -82,8 +82,18 @@ features = [
 
 [features]
 
+
+
 default = ["wasm", "console_error_panic_hook"]
 
-wasm = ["wasm-bindgen", "js-sys", "web-sys", "serde-wasm-bindgen", "wee_alloc"]
+
+
+wasm = ["wasm-bindgen", "js-sys", "web-sys", "serde-wasm-bindgen"]
+
+
 
 native = []
+
+
+
+

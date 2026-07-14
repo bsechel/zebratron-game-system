@@ -819,7 +819,29 @@ impl HambertCartridge {
     pub fn get_entity_count(&self) -> usize {
         self.entities.len()
     }
+}
 
+// Pure Rust methods for native runtime (not exported to WASM)
+impl HambertCartridge {
+    pub fn get_entity_data_native(&self, index: usize) -> Option<SimpleEntityData> {
+        if index >= self.entities.len() {
+            return None;
+        }
+
+        let entity = &self.entities[index];
+        Some(SimpleEntityData {
+            x: entity.x,
+            y: entity.y,
+            sprite_id: entity.sprite_id,
+            active: entity.active,
+            entity_type: entity.entity_type as u32,
+            facing_left: entity.facing_left,
+        })
+    }
+}
+
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
+impl HambertCartridge {
     #[cfg(feature = "wasm")]
     pub fn get_entity_data(&self, index: usize) -> Option<js_sys::Object> {
         if index >= self.entities.len() {
@@ -837,22 +859,6 @@ impl HambertCartridge {
         js_sys::Reflect::set(&obj, &"facing_left".into(), &entity.facing_left.into()).unwrap();
 
         Some(obj)
-    }
-
-    pub fn get_entity_data_native(&self, index: usize) -> Option<SimpleEntityData> {
-        if index >= self.entities.len() {
-            return None;
-        }
-
-        let entity = &self.entities[index];
-        Some(SimpleEntityData {
-            x: entity.x,
-            y: entity.y,
-            sprite_id: entity.sprite_id,
-            active: entity.active,
-            entity_type: entity.entity_type as u32,
-            facing_left: entity.facing_left,
-        })
     }
 
     fn spawn_hamberries(&mut self) {
@@ -1500,84 +1506,52 @@ impl ZSynthCartridge {
     }
 
     // Piano visualization methods
-    pub fn get_piano_key_count(&self) -> usize {
-        self.piano_keys.len()
-    }
-
-        #[cfg(feature = "wasm")]
-
-        pub fn get_piano_key_data(&self, index: usize) -> Option<js_sys::Object> {
-
-            if index >= self.piano_keys.len() {
-
-                return None;
-
-            }
-
-    
-
-            let key = &self.piano_keys[index];
-
-            let obj = js_sys::Object::new();
-
-    
-
-            js_sys::Reflect::set(&obj, &"x".into(), &key.x.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"y".into(), &key.y.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"width".into(), &key.width.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"height".into(), &key.height.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"is_black".into(), &key.is_black.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"is_pressed".into(), &key.is_pressed.into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"keyboard_key".into(), &key.keyboard_key.to_string().into()).unwrap();
-
-            js_sys::Reflect::set(&obj, &"note".into(), &key.note.into()).unwrap();
-
-    
-
-            Some(obj)
-
+        pub fn get_piano_key_count(&self) -> usize {
+            self.piano_keys.len()
         }
-
-    
-
-        pub fn get_piano_key_data_native(&self, index: usize) -> Option<PianoKeyData> {
-
-            if index >= self.piano_keys.len() {
-
-                return None;
-
-            }
-
-    
-
-            let key = &self.piano_keys[index];
-
-            Some(PianoKeyData {
-
-                x: key.x,
-
-                y: key.y,
-
-                width: key.width,
-
-                height: key.height,
-
-                is_black: key.is_black,
-
-                is_pressed: key.is_pressed,
-
-                note: key.note,
-
-            })
-
-        }
-
     }
-
+    
+    impl ZSynthCartridge {
+            pub fn get_piano_key_data_native(&self, index: usize) -> Option<PianoKeyData> {
+                if index >= self.piano_keys.len() {
+                    return None;
+                }
+        
+                let key = &self.piano_keys[index];
+                Some(PianoKeyData {
+                    x: key.x,
+                    y: key.y,
+                    width: key.width,
+                    height: key.height,
+                    is_black: key.is_black,
+                    is_pressed: key.is_pressed,
+                    note: key.note,
+                })
+            }
+        }
+        
+        #[cfg_attr(feature = "wasm", wasm_bindgen)]
+        impl ZSynthCartridge {
+            #[cfg(feature = "wasm")]
+            pub fn get_piano_key_data(&self, index: usize) -> Option<js_sys::Object> {
+                if index >= self.piano_keys.len() {
+                    return None;
+                }
+        
+                let key = &self.piano_keys[index];
+                let obj = js_sys::Object::new();
+        
+                js_sys::Reflect::set(&obj, &"x".into(), &key.x.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"y".into(), &key.y.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"width".into(), &key.width.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"height".into(), &key.height.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"is_black".into(), &key.is_black.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"is_pressed".into(), &key.is_pressed.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"keyboard_key".into(), &key.keyboard_key.to_string().into()).unwrap();
+                js_sys::Reflect::set(&obj, &"note".into(), &key.note.into()).unwrap();
+        
+                Some(obj)
+            }
+        }
+        
     

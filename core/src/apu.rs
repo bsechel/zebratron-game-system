@@ -205,9 +205,9 @@ impl Apu {
                     feedback: 0.3,          // 30% feedback
                     mix: 0.25,             // 25% wet signal
 
-                    // Initialize delay buffer (1 second max at 44.1kHz)
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    // Initialize delay buffer (500ms max at 44.1kHz)
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
 
@@ -272,8 +272,8 @@ impl Apu {
                     delay_time: 0.0,
                     feedback: 0.0,
                     mix: 0.0,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -318,8 +318,8 @@ impl Apu {
                     delay_time: 0.375,    // Eighth note delay at 80 BPM (375ms)
                     feedback: 0.5,        // 50% feedback for clear repeats
                     mix: 0.5,             // 50% wet signal for more audible delay
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -352,8 +352,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -386,8 +386,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -1200,8 +1200,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100], // 1 second buffer at 44.1kHz
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 2205], // 50ms buffer at 44.1kHz (reduced to save memory)
+                    buffer_size: 2205,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -1213,7 +1213,7 @@ impl Apu {
 
             // Calculate filter coefficients for the new oscillator
             Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
-            
+
             self.synth_oscillators.insert(note, osc);
         }
         self.synth_enabled = true;

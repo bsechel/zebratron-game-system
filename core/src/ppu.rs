@@ -1495,13 +1495,24 @@ impl Ppu {
 
     #[cfg(feature = "wasm")]
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
-        js_sys::Uint8Array::from(&self.screen_buffer[..])
+        let buffer = self.get_screen_buffer_ref();
+        unsafe { js_sys::Uint8Array::view(buffer) }
     }
 
-    #[cfg(not(feature = "wasm"))]
     pub fn get_screen_buffer_vec(&self) -> Vec<u8> {
         self.screen_buffer.to_vec()
     }
+}
+
+// Pure Rust internal methods
+impl Ppu {
+    pub fn get_screen_buffer_ref(&self) -> &[u8] {
+        &self.screen_buffer
+    }
+}
+
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
+impl Ppu {
 
     pub fn get_screen_width(&self) -> u32 {
         SCREEN_WIDTH as u32

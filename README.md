@@ -15,222 +15,66 @@
   <em>Hambert on Miracle Mountaintop</em>
 </div>
 
-A modern 8-bit game system inspired by classic retro consoles, designed to run at 60fps in web browsers using WebAssembly. Built with a focus on making scrolling games and classic arcade-style games easy to develop, with the long-term vision of becoming actual retro gaming hardware.
+A modern 8-bit game system designed to run identically in **Web Browsers** (via WASM) and **Native Hardware** (Raspberry Pi/Desktop). Built with a focus on making scrolling games and classic arcade-style games easy to develop, with the long-term vision of becoming a dedicated handheld console.
 
 **A project by Niebo Microsystems**
 
 > **📝 Character Attribution**
 > The "Zebratron" name and the Zebratron and Hambert characters featured in this system are created and copyrighted by the artist Christopher Graybill and [Zebratron.com](https://zebratron.com), and are inspired by the original Zebratron zines and video animation series.
 
-## System Specifications
-
-### Hardware Specs
-
-- **CPU**: Virtual 8-bit processor (WebAssembly implementation)
-- **Resolution**: 320×240 pixels (4:3 aspect ratio)
-- **Colors**: 256 color palette, 64 simultaneous on-screen colors
-- **Sprites**: 128 total sprites, 16 per scanline
-- **Audio**: 8-channel wavetable synthesis
-- **Memory**: 64KB main RAM, 32KB video RAM
-- **Storage**: Up to 2MB ROM cartridges + optional RAM
-
-### Developer Features
-
-- **Scrolling Engine**: Built-in smooth scrolling with parallax layer support
-- **Sprite System**: Automatic sprite management with hardware collision detection
-- **Asset Pipeline**: Tools to convert modern graphics/audio to system formats
-- **Scripting**: Simple scripting language for game logic
-- **Debugging**: Real-time memory viewer, sprite inspector, and performance profiler
-- **Hot Reload**: Live asset and code reloading during development
-
 ## 🚀 Getting Started
 
-### Prerequisites
+ZebratronGameSystem supports two primary runtime environments.
 
-- Node.js 18+
-- Rust toolchain with `wasm-pack`
-- Modern web browser with WebAssembly support
-
-### Quick Start
+### 1. Web Runtime (WASM)
+Best for quick testing and sharing games online.
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/ZebratronGameSystem.git
-cd ZebratronGameSystem
-
-# Install Rust and wasm-pack (macOS)
-brew install rust wasm-pack
-# OR install via rustup
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add wasm32-unknown-unknown
-cargo install wasm-pack
-
-# Install dependencies
-npm install
-
 # Build the WebAssembly core
-npm run build:wasm
+./build.sh
 
-# Start development server
-cd runtime
-npm run dev
-
-# Open http://localhost:5173 to see the demo
+# Start the development server
+cd runtime && npm run dev
 ```
 
-## 🎮 Running the Demo
-
-### Start the Demo Server
+### 2. Native Runtime (macOS/Linux/Pi)
+Best for high performance, low-latency audio, and dedicated hardware builds.
 
 ```bash
-cd runtime
-npm run dev
+# Build and run natively (automatically handles dependencies)
+cargo run -p zebratron-runtime-native
 ```
 
-### Open the Demo
-
-Navigate to **http://localhost:5173** in your browser.
-
-### Demo Features
-
-The demo includes:
-
-- **Interactive Game System**: Full 8-bit emulation running in WebAssembly
-- **Live Display**: 320×240 pixel canvas with test pattern rendering
-- **Real-time Debug Info**: CPU registers, memory state, and FPS counter
-- **System Controls**: Start, Stop, Reset buttons
-- **Input Testing**: Keyboard controls for gamepad simulation
-
-### How to Use the Demo
-
-#### 1. **System Controls**
-
-- **Start System**: Loads test ROM and begins emulation
-- **Stop System**: Halts emulation
-- **Reset System**: Resets CPU and memory to initial state
-
-#### 2. **Game Controls** (when system is running)
-
-- **Arrow Keys or WASD**: D-pad movement
-- **Z or Spacebar**: A button
-- **X or Left Shift**: B button
-- **Tab**: Select button
-- **Enter**: Start button
-
-#### 3. **Visual Output**
-
-- **Main Display**: Shows rendered graphics (test pattern by default)
-- **Status Indicator**: Shows system state (Initializing → Ready → Running)
-- **FPS Counter**: Real-time frame rate (should show ~60fps)
-
-#### 4. **Debug Information**
-
-The debug panel displays:
-
-```
-CPU: PC=$8000 A=$00 X=$00 Y=$00
-SP=$FD Status=$24 Cycles: 12345
-FPS: 60
-```
-
-- **PC**: Program Counter (current instruction address)
-- **A, X, Y**: CPU registers
-- **SP**: Stack Pointer
-- **Status**: CPU status flags
-- **Cycles**: Total CPU cycles executed
-
-### Troubleshooting
-
-#### Demo Won't Start
-
-```bash
-# Make sure you're in the runtime directory
-cd runtime
-
-# Install dependencies if missing
-npm install
-
-# Rebuild WebAssembly if needed
-cd ..
-npm run build:wasm
-cd runtime
-npm run dev
-```
-
-#### TypeScript Errors
-
-```bash
-# Check for build errors
-npm run build
-
-# Run type checker
-npm run typecheck
-```
-
-#### WebAssembly Issues
-
-```bash
-# Verify Rust toolchain
-rustc --version
-wasm-pack --version
-
-# Rebuild WASM module
-npm run build:wasm
-```
-
-### Expected Demo Behavior
-
-1. **Page Load**: Shows "Initializing..." status
-2. **After Load**: Status changes to "Ready"
-3. **Click Start**:
-   - Status becomes "Running"
-   - Test pattern appears (checkerboard-like pattern)
-   - FPS counter shows ~60fps
-   - CPU debug info updates in real-time
-4. **Keyboard Input**: Keys should register (check browser console)
-5. **Smooth Animation**: Pattern should render smoothly without stuttering
-
-### Demo Architecture
-
-```
-Browser (JavaScript/TypeScript)
-├── Canvas Rendering (320×240)
-├── Input Handling (Keyboard → Gamepad)
-├── Audio Context (Future)
-└── WebAssembly Interface
-    └── Rust Core
-        ├── CPU Emulator (8-bit style)
-        ├── PPU Graphics
-        ├── APU Audio
-        └── Memory Management
-```
+*For detailed Raspberry Pi setup (libraries, etc.), see the [Developer Guide](DEVELOPER_GUIDE.md).*
 
 ## 📁 Project Structure
 
 ```
 ZebratronGameSystem/
-├── core/                 # Rust WebAssembly core
+├── core/                 # Shared Rust Engine (Platform-Agnostic)
 │   ├── src/
-│   │   ├── cpu.rs       # Virtual 8-bit CPU
-│   │   ├── ppu.rs       # Picture Processing Unit
-│   │   ├── apu.rs       # Audio Processing Unit
-│   │   └── memory.rs    # Memory management
-│   └── Cargo.toml
-├── runtime/             # JavaScript/TypeScript runtime
-│   ├── src/
-│   │   ├── system.ts    # Main system interface
-│   │   ├── renderer.ts  # Canvas/WebGL renderer
-│   │   └── input.ts     # Input handling
-│   └── package.json
-├── tools/               # Development tools
-│   ├── asset-converter/ # Graphics/audio conversion
-│   ├── debugger/       # Real-time debugging tools
-│   └── ide/            # Game development IDE
-├── examples/           # Sample games
-│   ├── hello-world/
-│   ├── scrolling-demo/
-│   └── platformer/
-└── docs/              # Documentation
+│   │   ├── ppu_clean.rs # Graphics rendering engine
+│   │   ├── apu.rs       # Audio synthesis engine
+│   │   └── cartridge.rs # Game logic implementations
+├── runtime/             # Web Runtime (TypeScript + WASM)
+├── runtime-native/      # Native Runtime (Rust + minifb/cpal)
+├── TILESETS/            # Game asset data
+├── tools/               # Asset converters and development tools
+└── docs/                # Architecture and design guides
+```
+
+## 🎮 Execution Model
+
+The Zebratron core is a "Single Source of Truth" that drives multiple display and audio "drivers":
+
+```
+┌──────────────┐      ┌─────────────────────────┐      ┌───────────────┐
+│ Web Browser  │ ◄─── │ wasm-bindgen / web-sys  │ ◄──┐ │               │
+└──────────────┘      └─────────────────────────┘    │ │               │
+                                                     ├─┤ zebratron-core│
+┌──────────────┐      ┌─────────────────────────┐    │ │ (Pure Rust)   │
+│ Raspberry Pi │ ◄─── │ minifb / cpal / gilrs   │ ◄──┘ │               │
+└──────────────┘      └─────────────────────────┘      └───────────────┘
 ```
 
 ## 🎯 Design Goals
