@@ -13,19 +13,22 @@ mod font_system;
 mod tile_system;
 mod platformer_cartridge;
 
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
-#[cfg(feature = "wee_alloc")]
+#[cfg(all(feature = "wasm", feature = "wee_alloc"))]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 extern "C" {
     fn alert(s: &str);
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn greet() {
     alert("Hello, ZebratronGameSystem!");

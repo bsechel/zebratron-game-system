@@ -1,18 +1,19 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
 const MAIN_RAM_SIZE: usize = 64 * 1024; // 64KB main RAM
 const VIDEO_RAM_SIZE: usize = 32 * 1024; // 32KB video RAM
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct Memory {
     main_ram: Vec<u8>,
     video_ram: Vec<u8>,
     cartridge_rom: Vec<u8>,
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl Memory {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> Memory {
         Memory {
             main_ram: vec![0; MAIN_RAM_SIZE],

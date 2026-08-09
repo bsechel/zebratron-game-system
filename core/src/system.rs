@@ -1,3 +1,4 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use crate::cpu::Cpu;
 use crate::ppu::Ppu;
@@ -5,7 +6,7 @@ use crate::apu::Apu;
 use crate::memory::Memory;
 use crate::utils;
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct ZebratronSystem {
     cpu: Cpu,
     ppu: Ppu,
@@ -15,9 +16,9 @@ pub struct ZebratronSystem {
     frame_ready: bool,
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl ZebratronSystem {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> ZebratronSystem {
         utils::set_panic_hook();
 
@@ -96,8 +97,15 @@ impl ZebratronSystem {
     }
 
     // Graphics interface
+    #[cfg(feature = "wasm")]
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
-        self.ppu.get_screen_buffer()
+        let buffer = self.ppu.get_screen_buffer_ref();
+        unsafe { js_sys::Uint8Array::view(buffer) }
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_screen_buffer(&self) -> Vec<u8> {
+        self.ppu.get_screen_buffer_vec()
     }
 
     pub fn get_screen_width(&self) -> u32 {
@@ -118,6 +126,7 @@ impl ZebratronSystem {
     }
 
     // Debug interface
+    #[cfg(feature = "wasm")]
     pub fn get_cpu_state(&self) -> JsValue {
         let state = serde_json::json!({
             "a": self.cpu.a,
@@ -129,6 +138,19 @@ impl ZebratronSystem {
             "cycles": self.cpu.cycles
         });
         serde_wasm_bindgen::to_value(&state).unwrap()
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_cpu_state_json(&self) -> String {
+        serde_json::json!({
+            "a": self.cpu.a,
+            "x": self.cpu.x,
+            "y": self.cpu.y,
+            "sp": self.cpu.sp,
+            "pc": self.cpu.pc,
+            "status": self.cpu.status,
+            "cycles": self.cpu.cycles
+        }).to_string()
     }
 
     pub fn read_memory(&self, address: u16) -> u8 {

@@ -1,3 +1,4 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use crate::cpu::Cpu;
 use crate::ppu_clean::Ppu;
@@ -8,7 +9,7 @@ use crate::platformer_cartridge::PlatformerCartridge;
 use crate::font_system::{FontSystem, Language};
 use crate::utils;
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct ZebratronCartridgeSystem {
     cpu: Cpu,
     ppu: Ppu,
@@ -25,9 +26,9 @@ pub struct ZebratronCartridgeSystem {
     debug_animation_frame: u32, // For debug indicator
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl ZebratronCartridgeSystem {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> ZebratronCartridgeSystem {
         utils::set_panic_hook();
 
@@ -233,29 +234,14 @@ impl ZebratronCartridgeSystem {
 
                         // Add cartridge entities as sprites to PPU
                         for i in 0..cartridge.get_entity_count() {
-                            if let Some(entity_data) = cartridge.get_entity_data(i) {
-                                let x = js_sys::Reflect::get(&entity_data, &"x".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as f32;
-                                let y = js_sys::Reflect::get(&entity_data, &"y".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as f32;
-                                let sprite_id = js_sys::Reflect::get(&entity_data, &"sprite_id".into())
-                                    .unwrap()
-                                    .as_f64()
-                                    .unwrap_or(0.0) as u32;
-                                let active = js_sys::Reflect::get(&entity_data, &"active".into())
-                                    .unwrap()
-                                    .as_bool()
-                                    .unwrap_or(false);
-                                let facing_left = js_sys::Reflect::get(&entity_data, &"facing_left".into())
-                                    .unwrap()
-                                    .as_bool()
-                                    .unwrap_or(false);
-
-                                self.ppu.add_sprite(x, y, sprite_id, active, facing_left);
+                            if let Some(entity_data) = cartridge.get_entity_data_native(i) {
+                                self.ppu.add_sprite(
+                                    entity_data.x,
+                                    entity_data.y,
+                                    entity_data.sprite_id,
+                                    entity_data.active,
+                                    entity_data.facing_left
+                                );
                             }
                         }
 
@@ -278,23 +264,11 @@ impl ZebratronCartridgeSystem {
                     
                     // Add piano keys as visual sprites
                     for i in 0..cartridge.get_piano_key_count() {
-                        if let Some(key_data) = cartridge.get_piano_key_data(i) {
-                            let x = js_sys::Reflect::get(&key_data, &"x".into())
-                                .unwrap()
-                                .as_f64()
-                                .unwrap_or(0.0) as f32;
-                            let y = js_sys::Reflect::get(&key_data, &"y".into())
-                                .unwrap()
-                                .as_f64()
-                                .unwrap_or(0.0) as f32;
-                            let is_black = js_sys::Reflect::get(&key_data, &"is_black".into())
-                                .unwrap()
-                                .as_bool()
-                                .unwrap_or(false);
-                            let is_pressed = js_sys::Reflect::get(&key_data, &"is_pressed".into())
-                                .unwrap()
-                                .as_bool()
-                                .unwrap_or(false);
+                        if let Some(key_data) = cartridge.get_piano_key_data_native(i) {
+                            let x = key_data.x;
+                            let y = key_data.y;
+                            let is_black = key_data.is_black;
+                            let is_pressed = key_data.is_pressed;
                             
                             // Use different sprite IDs for different key states
                             // 10 = white key unpressed, 11 = white key pressed
@@ -617,9 +591,15 @@ impl ZebratronCartridgeSystem {
         self.apu.exit_sound_test_mode();
     }
 
+    #[cfg(feature = "wasm")]
     pub fn get_screen_buffer(&self) -> js_sys::Uint8Array {
-        let buffer = self.ppu.get_screen_buffer();
-        js_sys::Uint8Array::from(&buffer[..])
+        let buffer = self.ppu.get_screen_buffer_ref();
+        unsafe { js_sys::Uint8Array::view(buffer) }
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_screen_buffer_vec(&self) -> Vec<u8> {
+        self.ppu.get_screen_buffer_vec()
     }
 
     // PPU control methods
@@ -649,11 +629,20 @@ impl ZebratronCartridgeSystem {
         true // Simplified - assume audio is always available
     }
 
+    #[cfg(feature = "wasm")]
     pub fn get_audio_info(&self) -> Option<js_sys::Object> {
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &"sampleRate".into(), &44100u32.into()).unwrap();
         js_sys::Reflect::set(&obj, &"estimatedLatency".into(), &20u32.into()).unwrap();
         Some(obj)
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_audio_info_json(&self) -> String {
+        serde_json::json!({
+            "sampleRate": 44100,
+            "estimatedLatency": 20
+        }).to_string()
     }
 
     pub fn set_master_volume(&mut self, volume: f32) {
@@ -772,6 +761,7 @@ impl ZebratronCartridgeSystem {
     }
 
     // CPU state for debugging - simplified for cartridge system
+    #[cfg(feature = "wasm")]
     pub fn get_cpu_state(&self) -> js_sys::Object {
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &"pc".into(), &0u32.into()).unwrap();
@@ -782,6 +772,19 @@ impl ZebratronCartridgeSystem {
         js_sys::Reflect::set(&obj, &"status".into(), &0u32.into()).unwrap();
         js_sys::Reflect::set(&obj, &"cycles".into(), &0u32.into()).unwrap();
         obj
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    pub fn get_cpu_state_json(&self) -> String {
+        serde_json::json!({
+            "pc": 0,
+            "a": 0,
+            "x": 0,
+            "y": 0,
+            "sp": 0,
+            "status": 0,
+            "cycles": 0
+        }).to_string()
     }
 
     pub fn get_frame_count(&self) -> u64 {

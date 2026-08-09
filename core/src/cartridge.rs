@@ -1,3 +1,4 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
@@ -156,7 +157,7 @@ pub struct Level {
 }
 
 // The Hambert cartridge - extracted game logic
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct HambertCartridge {
     entities: Vec<Entity>,
     player_id: usize,
@@ -184,9 +185,19 @@ pub struct HambertCartridge {
     interlude_text_index: usize,
 }
 
-#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct SimpleEntityData {
+    pub x: f32,
+    pub y: f32,
+    pub sprite_id: u32,
+    pub active: bool,
+    pub entity_type: u32,
+    pub facing_left: bool,
+}
+
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl HambertCartridge {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> HambertCartridge {
         let mut cartridge = HambertCartridge {
             entities: Vec::new(),
@@ -808,7 +819,30 @@ impl HambertCartridge {
     pub fn get_entity_count(&self) -> usize {
         self.entities.len()
     }
+}
 
+// Pure Rust methods for native runtime (not exported to WASM)
+impl HambertCartridge {
+    pub fn get_entity_data_native(&self, index: usize) -> Option<SimpleEntityData> {
+        if index >= self.entities.len() {
+            return None;
+        }
+
+        let entity = &self.entities[index];
+        Some(SimpleEntityData {
+            x: entity.x,
+            y: entity.y,
+            sprite_id: entity.sprite_id,
+            active: entity.active,
+            entity_type: entity.entity_type as u32,
+            facing_left: entity.facing_left,
+        })
+    }
+}
+
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
+impl HambertCartridge {
+    #[cfg(feature = "wasm")]
     pub fn get_entity_data(&self, index: usize) -> Option<js_sys::Object> {
         if index >= self.entities.len() {
             return None;
@@ -1162,7 +1196,7 @@ pub struct PianoKey {
 }
 
 // Z-Synth cartridge - A synthesizer application
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct ZSynthCartridge {
     // Key mappings for ZSXDCVGBHNJM -> C2+ notes
     key_to_note: HashMap<char, u32>,
@@ -1187,9 +1221,20 @@ pub struct ZSynthCartridge {
     midi_current_arpeggio_notes: HashMap<u32, u32>,  // Current arpeggio note for each MIDI note
 }
 
-#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct PianoKeyData {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub is_black: bool,
+    pub is_pressed: bool,
+    pub note: u32,
+}
+
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl ZSynthCartridge {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> ZSynthCartridge {
         let mut key_to_note = HashMap::new();
         let mut piano_keys = Vec::new();
@@ -1461,27 +1506,52 @@ impl ZSynthCartridge {
     }
 
     // Piano visualization methods
-    pub fn get_piano_key_count(&self) -> usize {
-        self.piano_keys.len()
-    }
-
-    pub fn get_piano_key_data(&self, index: usize) -> Option<js_sys::Object> {
-        if index >= self.piano_keys.len() {
-            return None;
+        pub fn get_piano_key_count(&self) -> usize {
+            self.piano_keys.len()
         }
-
-        let key = &self.piano_keys[index];
-        let obj = js_sys::Object::new();
-
-        js_sys::Reflect::set(&obj, &"x".into(), &key.x.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"y".into(), &key.y.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"width".into(), &key.width.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"height".into(), &key.height.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"is_black".into(), &key.is_black.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"is_pressed".into(), &key.is_pressed.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"keyboard_key".into(), &key.keyboard_key.to_string().into()).unwrap();
-        js_sys::Reflect::set(&obj, &"note".into(), &key.note.into()).unwrap();
-
-        Some(obj)
     }
-}
+    
+    impl ZSynthCartridge {
+            pub fn get_piano_key_data_native(&self, index: usize) -> Option<PianoKeyData> {
+                if index >= self.piano_keys.len() {
+                    return None;
+                }
+        
+                let key = &self.piano_keys[index];
+                Some(PianoKeyData {
+                    x: key.x,
+                    y: key.y,
+                    width: key.width,
+                    height: key.height,
+                    is_black: key.is_black,
+                    is_pressed: key.is_pressed,
+                    note: key.note,
+                })
+            }
+        }
+        
+        #[cfg_attr(feature = "wasm", wasm_bindgen)]
+        impl ZSynthCartridge {
+            #[cfg(feature = "wasm")]
+            pub fn get_piano_key_data(&self, index: usize) -> Option<js_sys::Object> {
+                if index >= self.piano_keys.len() {
+                    return None;
+                }
+        
+                let key = &self.piano_keys[index];
+                let obj = js_sys::Object::new();
+        
+                js_sys::Reflect::set(&obj, &"x".into(), &key.x.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"y".into(), &key.y.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"width".into(), &key.width.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"height".into(), &key.height.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"is_black".into(), &key.is_black.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"is_pressed".into(), &key.is_pressed.into()).unwrap();
+                js_sys::Reflect::set(&obj, &"keyboard_key".into(), &key.keyboard_key.to_string().into()).unwrap();
+                js_sys::Reflect::set(&obj, &"note".into(), &key.note.into()).unwrap();
+        
+                Some(obj)
+            }
+        }
+        
+    

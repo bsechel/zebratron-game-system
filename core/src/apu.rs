@@ -1,9 +1,10 @@
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use std::f32::consts::PI;
 use std::collections::HashMap;
 use crate::laugh_sample::{LAUGH_SAMPLE_RETRO_SAMPLE_DATA, LAUGH_SAMPLE_RETRO_SAMPLE_RATE};
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct Apu {
     // Audio channels
     pulse1: PulseChannel,
@@ -145,9 +146,9 @@ struct DigitalDelay {
     feedback_filter: f32, // Simple one-pole lowpass
 }
 
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl Apu {
-    #[wasm_bindgen(constructor)]
+    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new() -> Apu {
         Apu {
             pulse1: PulseChannel {
@@ -204,9 +205,9 @@ impl Apu {
                     feedback: 0.3,          // 30% feedback
                     mix: 0.25,             // 25% wet signal
 
-                    // Initialize delay buffer (1 second max at 44.1kHz)
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    // Initialize delay buffer (500ms max at 44.1kHz)
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
 
@@ -271,8 +272,8 @@ impl Apu {
                     delay_time: 0.0,
                     feedback: 0.0,
                     mix: 0.0,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -317,8 +318,8 @@ impl Apu {
                     delay_time: 0.375,    // Eighth note delay at 80 BPM (375ms)
                     feedback: 0.5,        // 50% feedback for clear repeats
                     mix: 0.5,             // 50% wet signal for more audible delay
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -351,8 +352,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -385,8 +386,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100],
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 22050],
+                    buffer_size: 22050,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -1199,8 +1200,8 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 44100], // 1 second buffer at 44.1kHz
-                    buffer_size: 44100,
+                    buffer: vec![0.0; 2205], // 50ms buffer at 44.1kHz (reduced to save memory)
+                    buffer_size: 2205,
                     write_pos: 0,
                     read_pos: 0,
                     feedback_filter: 0.0,
@@ -1212,7 +1213,7 @@ impl Apu {
 
             // Calculate filter coefficients for the new oscillator
             Self::update_filter_coefficients(&mut osc.filter, self.sample_rate);
-            
+
             self.synth_oscillators.insert(note, osc);
         }
         self.synth_enabled = true;
@@ -1237,7 +1238,7 @@ impl Apu {
     }
     
     // Global filter control methods for Z-Synth
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_filter_enabled(&mut self, enabled: bool) {
         self.global_filter_enabled = enabled;
         // Apply to all active synth oscillators
@@ -1246,7 +1247,7 @@ impl Apu {
         }
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_filter_type(&mut self, filter_type: u8) {
         self.global_filter_type = filter_type;
         // Apply to all active synth oscillators
@@ -1256,7 +1257,7 @@ impl Apu {
         }
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_filter_cutoff(&mut self, cutoff: f32) {
         self.global_filter_cutoff = cutoff;
         // Convert Hz to normalized cutoff (0.0 to 1.0)
@@ -1268,7 +1269,7 @@ impl Apu {
         }
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_filter_resonance(&mut self, resonance: f32) {
         self.global_filter_resonance = resonance;
         // Apply to all active synth oscillators
@@ -1279,7 +1280,7 @@ impl Apu {
     }
     
     // SID-style 3-voice API for game developers
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice1_play_note(&mut self, note: u8, waveform: u8) {
         self.sid_voice1.frequency = Self::midi_to_frequency(note);
         self.sid_voice1.waveform = waveform.clamp(0, 4);
@@ -1287,7 +1288,7 @@ impl Apu {
         self.sid_enabled = true;
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice2_play_note(&mut self, note: u8, waveform: u8) {
         self.sid_voice2.frequency = Self::midi_to_frequency(note);
         self.sid_voice2.waveform = waveform.clamp(0, 4);
@@ -1295,7 +1296,7 @@ impl Apu {
         self.sid_enabled = true;
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice3_play_note(&mut self, note: u8, waveform: u8) {
         self.sid_voice3.frequency = Self::midi_to_frequency(note);
         self.sid_voice3.waveform = waveform.clamp(0, 4);
@@ -1303,25 +1304,25 @@ impl Apu {
         self.sid_enabled = true;
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice1_stop(&mut self) {
         self.sid_voice1.enabled = false;
         self.check_sid_enabled();
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice2_stop(&mut self) {
         self.sid_voice2.enabled = false;
         self.check_sid_enabled();
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice3_stop(&mut self) {
         self.sid_voice3.enabled = false;
         self.check_sid_enabled();
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_stop_all(&mut self) {
         self.sid_voice1.enabled = false;
         self.sid_voice2.enabled = false;
@@ -1330,35 +1331,35 @@ impl Apu {
     }
     
     // Volume control for mixing SID and polyphonic layers
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_sid_volume(&mut self, volume: f32) {
         self.sid_volume = volume.clamp(0.0, 1.0);
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_poly_volume(&mut self, volume: f32) {
         self.poly_volume = volume.clamp(0.0, 1.0);
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_sid_voice2_volume(&mut self, volume: f32) {
         self.sid_voice2.volume = volume.clamp(0.0, 1.0);
     }
 
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_sid_voice3_volume(&mut self, volume: f32) {
         self.sid_voice3.volume = volume.clamp(0.0, 1.0);
     }
 
     // SID filter control (affects all 3 voices like real SID)
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_set_filter_voices(&mut self, voice1: bool, voice2: bool, voice3: bool) {
         self.sid_voice1.filter.enabled = voice1;
         self.sid_voice2.filter.enabled = voice2;
         self.sid_voice3.filter.enabled = voice3;
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_set_filter_cutoff(&mut self, cutoff: f32) {
         let normalized_cutoff = (cutoff / (self.sample_rate * 0.5)).min(1.0);
         self.sid_voice1.filter.cutoff = normalized_cutoff;
@@ -1369,7 +1370,7 @@ impl Apu {
         Self::update_filter_coefficients(&mut self.sid_voice3.filter, self.sample_rate);
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_set_filter_resonance(&mut self, resonance: f32) {
         let clamped_resonance = resonance.clamp(0.0, 10.0);
         self.sid_voice1.filter.resonance = clamped_resonance;
@@ -1380,7 +1381,7 @@ impl Apu {
         Self::update_filter_coefficients(&mut self.sid_voice3.filter, self.sample_rate);
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_set_filter_type(&mut self, filter_type: u8) {
         let clamped_type = filter_type.clamp(0, 2);
         self.sid_voice1.filter.filter_type = clamped_type;
@@ -1392,7 +1393,7 @@ impl Apu {
     }
     
     // Polyphonic layer API (enhanced Z-Synth access)
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn poly_play_chord(&mut self, notes: Vec<u8>) {
         // Stop all current notes and play new chord
         self.synth_oscillators.clear();
@@ -1401,17 +1402,17 @@ impl Apu {
         }
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn poly_play_note(&mut self, note: u8) {
         self.synth_note_on(note as u32);
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn poly_stop_note(&mut self, note: u8) {
         self.synth_note_off(note as u32);
     }
     
-    #[wasm_bindgen]
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn poly_stop_all(&mut self) {
         self.synth_oscillators.clear();
         self.synth_enabled = false;

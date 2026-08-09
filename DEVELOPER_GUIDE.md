@@ -4,11 +4,35 @@
 
 ZebratronGameSystem is a custom 8-bit style game system inspired by classic retro gaming consoles. It runs in web browsers using WebAssembly for the core system and JavaScript/TypeScript for the runtime layer.
 
-## Architecture
+## Dual-Target Runtime Architecture
 
-### Core Components (Rust/WebAssembly)
+ZebratronGameSystem supports two primary runtime environments using a shared Rust core. This is achieved through Rust **Feature Flags**.
 
-The core system is written in Rust and compiled to WebAssembly for performance-critical operations:
+### 1. Web Runtime (WebAssembly)
+- **Target**: Modern web browsers.
+- **Technology**: `wasm-bindgen`, `web-sys`, and HTML5 Canvas.
+- **Feature Flag**: `wasm` (default).
+- **Build Command**:
+  ```bash
+  cd core
+  wasm-pack build --target web
+  ```
+
+### 2. Native Runtime (Desktop & Raspberry Pi)
+- **Target**: macOS, Linux, and Raspberry Pi hardware.
+- **Technology**: `minifb` (Graphics), `cpal` (Audio), and `gilrs` (Gamepad).
+- **Feature Flag**: `native`.
+- **Build Command**:
+  ```bash
+  # From project root
+  cargo run -p zebratron-runtime-native
+  ```
+
+---
+
+## Architecture (Platform-Agnostic Core)
+
+The core engine is written in pure Rust and is designed to be platform-independent. It uses conditional compilation (`#[cfg(feature = "wasm")]`) to handle platform-specific bindings only at the edge.
 
 #### `/core/src/lib.rs`
 - Main WebAssembly module entry point

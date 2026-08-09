@@ -9,10 +9,22 @@ pub fn set_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-// Utility macros for logging to browser console
+// Utility macros for logging
+
 #[macro_export]
+
 macro_rules! log {
+
     ( $( $t:tt )* ) => {
+
+        #[cfg(feature = "wasm")]
+
         web_sys::console::log_1(&format!( $( $t )* ).into());
+
+        #[cfg(not(feature = "wasm"))]
+
+        println!( $( $t )* );
+
     }
+
 }
