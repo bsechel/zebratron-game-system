@@ -942,6 +942,11 @@ impl Apu {
             self.sound_test_mode = true;
             self.test_osc.enabled = true;
             self.test_osc.waveform = self.current_waveform;
+
+            // Enable vibrato for expressive lead melody
+            self.test_osc.vibrato_rate = 5.5; // 5.5 Hz vibrato (typical for expressive leads)
+            self.test_osc.vibrato_depth = 0.015; // 1.5% frequency modulation (subtle but noticeable)
+
             // Reset melody to beginning when enabling
             self.melody_step = 0;
             self.melody_timer = 0.0;
@@ -952,6 +957,9 @@ impl Apu {
                 self.test_osc.frequency = Self::midi_to_frequency(note);
             }
         } else {
+            // Disable vibrato when melody stops
+            self.test_osc.vibrato_depth = 0.0;
+
             // Keep sound test mode active but use manual control
             if self.sound_test_mode {
                 self.test_osc.frequency = Self::midi_to_frequency(self.current_note);

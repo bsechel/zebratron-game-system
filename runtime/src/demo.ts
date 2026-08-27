@@ -1,5 +1,8 @@
 import { ZebratronCartridgeSystem, InputManager, Button } from './index';
 
+// Flip to true to re-enable verbose audio startup logging (Chrome autoplay/AudioContext debugging).
+const AUDIO_DEBUG = false;
+
 class Demo {
   private system: ZebratronCartridgeSystem;
   // private renderer: Renderer;
@@ -16,25 +19,10 @@ class Demo {
   constructor() {
     this.system = new ZebratronCartridgeSystem();
 
-    // const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-    // this.renderer = new Renderer(canvas, 2);
     this.input = new InputManager();
 
     this.setupUI();
     this.setupSoundTestKeys();
-
-    // Initialize the system (including audio)
-    this.initializeSystem();
-  }
-
-  private async initializeSystem(): Promise<void> {
-    try {
-      console.log('🚀 Initializing ZebratronCartridgeSystem...');
-      await this.system.initialize();
-      console.log('✅ System initialized successfully!');
-    } catch (error) {
-      console.error('❌ Failed to initialize system:', error);
-    }
   }
 
   private setupSoundTestKeys(): void {
@@ -267,30 +255,52 @@ class Demo {
   }
 
   private async start(): Promise<void> {
-    if (this.isRunning) return;
+    // If already running, just try to enable audio and return
+    if (this.isRunning) {
+      if (AUDIO_DEBUG) console.log('🔊 Game already running, attempting to enable audio...');
+      try {
+        await this.system.start(); // This will retry audio initialization
+        if (AUDIO_DEBUG) console.log('✅ Audio enabled successfully');
+      } catch (error) {
+        console.warn('⚠️ Could not enable audio:', error);
+      }
+      return;
+    }
 
     try {
-      console.log('🎮 Starting game loop...');
-      console.log('🔊 Audio available:', this.system.isAudioAvailable());
-      console.log('🏃 System running:', this.system.isRunning());
-      console.log('🎵 Audio system status:', this.system.isAudioAvailable());
-      console.log('🎛️ Audio info:', this.system.getAudioInfo());
+      // CRITICAL: Activate audio context FIRST while we have user interaction
+      if (AUDIO_DEBUG) {
+        console.log('🔊 === ACTIVATING AUDIO CONTEXT FIRST ===');
+        console.log('🎛️ Audio info before start:', this.system.getAudioInfo());
+      }
+
+      await this.system.start(); // This resumes the audio context
+
+      if (AUDIO_DEBUG) {
+        console.log('🎛️ Audio info after start:', this.system.getAudioInfo());
+        console.log('✅ Audio context activated');
+
+        // Now continue with game setup
+        console.log('🎮 Starting game loop...');
+        console.log('🔊 Audio available:', this.system.isAudioAvailable());
+        console.log('🏃 System running:', this.system.isRunning());
+
+        console.log('🧪 Ensuring normal game audio mode...');
+      }
 
       // Ensure sound test mode is off for normal game operation
-      console.log('🧪 Ensuring normal game audio mode...');
       this.system.exitSoundTestMode();
       this.system.setMelodyEnabled(false); // Disable background melody
 
-      setTimeout(() => {
-        console.log('🎼 Sound test active:', this.system.isSoundTestMode());
-        console.log('🎵 Melody enabled:', this.system.getMelodyEnabled());
-        console.log('🎵 System ready for game sounds');
-      }, 100);
+      if (AUDIO_DEBUG) {
+        setTimeout(() => {
+          console.log('🎼 Sound test active:', this.system.isSoundTestMode());
+          console.log('🎵 Melody enabled:', this.system.getMelodyEnabled());
+          console.log('🎵 System ready for game sounds');
+        }, 100);
 
-      // Actually start the WASM system (this will auto-load platformer cartridge)
-      console.log('🚀 Starting WASM system...');
-      await this.system.start();
-      console.log('✅ WASM system started, running:', this.system.isRunning());
+        console.log('✅ System started, running:', this.system.isRunning());
+      }
 
     } catch (error) {
       console.error('❌ Failed to start system:', error);
@@ -527,10 +537,12 @@ class Demo {
   }
 }
 
-// Initialize the demo when the page loads
-const demo = new Demo();
-demo.initialize().then(() => {
-  console.log('Demo ready!');
-}).catch((error) => {
-  console.error('Failed to initialize demo:', error);
+// Initialize the demo when the DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  const demo = new Demo();
+  demo.initialize().then(() => {
+    console.log('Demo ready!');
+  }).catch((error) => {
+    console.error('Failed to initialize demo:', error);
+  });
 });

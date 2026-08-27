@@ -418,6 +418,7 @@ export class ZebratronCartridgeSystem {
   private audioManager: AudioManager | null = null;
   private midiManager: MidiManager | null = null;
   private isInitialized = false;
+  private imageData: ImageData | null = null; // Reuse to avoid 614KB allocation per frame
 
   async initialize(canvasElement?: HTMLCanvasElement): Promise<void> {
     if (this.isInitialized) return;
@@ -563,15 +564,18 @@ export class ZebratronCartridgeSystem {
 
     const buffer = this.wasmSystem.get_screen_buffer();
 
-    // Create ImageData from the WASM buffer
-    const imageData = new ImageData(
-      new Uint8ClampedArray(buffer),
-      320,
-      240
-    );
+    // MEMORY FIX: Reuse ImageData to avoid 614KB allocation per frame
+    // Create once and update its data, instead of allocating new objects
+    if (!this.imageData) {
+      this.imageData = new ImageData(320, 240);
+    }
+
+    // Copy buffer data into existing ImageData (no new allocation)
+    // buffer is already Uint8Array from WASM, set() can handle the conversion
+    this.imageData.data.set(buffer);
 
     // Draw to canvas
-    this.ctx.putImageData(imageData, 0, 0);
+    this.ctx.putImageData(this.imageData, 0, 0);
   }
 
   isRunning(): boolean {

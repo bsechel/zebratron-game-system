@@ -24,6 +24,7 @@ pub struct ZebratronCartridgeSystem {
     last_game_state: u32, // Track game state changes for audio management
     font_system: FontSystem, // Internationalization support
     debug_animation_frame: u32, // For debug indicator
+    last_text_index: usize, // Cache text index to avoid String allocations every frame
 }
 
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
@@ -46,6 +47,7 @@ impl ZebratronCartridgeSystem {
             last_game_state: 0, // Start with intro state
             font_system: FontSystem::new(), // Initialize font system with English
             debug_animation_frame: 0,
+            last_text_index: 0,
         };
         
         // Set to Japanese language for hiragana text
@@ -126,11 +128,17 @@ impl ZebratronCartridgeSystem {
         }
 
         // Step PPU until a frame is complete (authentic timing)
+        // PPU runs at 3x CPU speed, so step APU every 3 PPU cycles
+        let mut ppu_cycle = 0;
         loop {
             let frame_complete = self.ppu.step(&self.memory);
 
-            // Step APU for sound effect processing
-            self.apu.step();
+            // Step APU at CPU speed (every 3 PPU cycles for authentic NES timing)
+            // This reduces APU calls from 89,342 to 29,780 per frame
+            ppu_cycle += 1;
+            if ppu_cycle % 3 == 0 {
+                self.apu.step();
+            }
 
             if frame_complete {
                 self.frame_ready = true;
@@ -215,8 +223,15 @@ impl ZebratronCartridgeSystem {
                         self.ppu.set_intro_mode(true);
                         self.ppu.set_zsynth_mode(false);
                         self.ppu.set_platformer_mode(false);
-                        let intro_text = cartridge.get_intro_text_display();
-                        self.ppu.set_intro_text(intro_text);
+
+                        // MEMORY FIX: Only update intro text when it changes (avoid 60 String allocations/second)
+                        let current_text_index = cartridge.get_text_index();
+                        if current_text_index != self.last_text_index {
+                            let intro_text = cartridge.get_intro_text_display();
+                            self.ppu.set_intro_text(intro_text);
+                            self.last_text_index = current_text_index;
+                        }
+
                         // Reset scroll for intro screen
                         self.ppu.set_scroll(0.0, 0.0);
                     } else { // Playing
@@ -232,17 +247,16 @@ impl ZebratronCartridgeSystem {
                         // Clear existing sprites
                         self.ppu.clear_sprites();
 
-                        // Add cartridge entities as sprites to PPU
+                        // ZERO-ALLOCATION ENTITY SYNC: Use direct field access instead of struct allocation
+                        // This eliminates memory allocations that were causing crashes
                         for i in 0..cartridge.get_entity_count() {
-                            if let Some(entity_data) = cartridge.get_entity_data_native(i) {
-                                self.ppu.add_sprite(
-                                    entity_data.x,
-                                    entity_data.y,
-                                    entity_data.sprite_id,
-                                    entity_data.active,
-                                    entity_data.facing_left
-                                );
-                            }
+                            let x = cartridge.get_entity_x(i);
+                            let y = cartridge.get_entity_y(i);
+                            let sprite_id = cartridge.get_entity_sprite_id(i);
+                            let active = cartridge.get_entity_active(i);
+                            let facing_left = cartridge.get_entity_facing_left(i);
+
+                            self.ppu.add_sprite(x, y, sprite_id, active, facing_left);
                         }
 
                         // Sync player states for visual effects
@@ -431,8 +445,13 @@ impl ZebratronCartridgeSystem {
         match self.current_cartridge_type {
             1 => {
                 // Hambert cartridge - process sound effects
+                // MEMORY FIX: Only get sounds if they exist (avoid 60 Vec allocations/second)
                 let pending_sounds = if let Some(ref cartridge) = self.hambert_cartridge {
-                    cartridge.get_pending_sounds()
+                    if cartridge.has_pending_sounds() {
+                        cartridge.get_pending_sounds()
+                    } else {
+                        Vec::new()
+                    }
                 } else {
                     Vec::new()
                 };
@@ -469,8 +488,13 @@ impl ZebratronCartridgeSystem {
             }
             3 => {
                 // Platformer cartridge - process sound effects
+                // MEMORY FIX: Only get sounds if they exist (avoid 60 Vec allocations/second)
                 let pending_sounds = if let Some(ref cartridge) = self.platformer_cartridge {
-                    cartridge.get_pending_sounds()
+                    if cartridge.has_pending_sounds() {
+                        cartridge.get_pending_sounds()
+                    } else {
+                        Vec::new()
+                    }
                 } else {
                     Vec::new()
                 };
