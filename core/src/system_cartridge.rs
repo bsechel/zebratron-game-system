@@ -320,9 +320,12 @@ impl ZebratronCartridgeSystem {
                             if cutscene.current_screen < cutscene.screens.len() {
                                 let screen = &cutscene.screens[cutscene.current_screen];
 
-                                // Pass image
-                                let image_vec: Vec<Vec<u8>> = screen.image.iter().map(|row| row.to_vec()).collect();
-                                self.ppu.set_cutscene_image(image_vec);
+                                // Pass background frame (resolves static vs. looping animation)
+                                if let Some(frame) = cutscene.current_background_frame() {
+                                    self.ppu.set_cutscene_image(frame);
+                                }
+                                self.ppu.set_cutscene_bg_color(screen.background_color_index);
+                                self.ppu.set_cutscene_bg_opaque(screen.background_opaque);
 
                                 // Pass text
                                 self.ppu.set_cutscene_text(screen.text_lines.clone());

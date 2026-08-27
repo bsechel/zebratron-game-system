@@ -323,10 +323,12 @@ pub struct Ppu {
 
     // Cutscene mode
     cutscene_mode: bool,
-    cutscene_image: Option<Vec<Vec<u8>>>, // 64x64 cutscene image
+    cutscene_image: Option<Vec<Vec<u8>>>, // variable-sized cutscene image
     cutscene_text: Vec<String>, // Text lines for cutscene
     cutscene_scroll_offset: f32, // Text scroll offset
     cutscene_char_index: usize, // Current character to display (for typing effect)
+    cutscene_bg_color_index: u8, // Palette index for the cleared background
+    cutscene_bg_opaque: bool, // If true, draw every image pixel (no index-0 transparency key)
     
     // HUD/UI data
     hud_lives: u8,
@@ -379,6 +381,8 @@ impl Ppu {
             cutscene_text: Vec::new(),
             cutscene_scroll_offset: 0.0,
             cutscene_char_index: 0,
+            cutscene_bg_color_index: 0,
+            cutscene_bg_opaque: false,
             hud_lives: 3,
             hud_hamberries: 0,
             player_dying: false,
@@ -593,6 +597,14 @@ impl Ppu {
 
     pub fn set_cutscene_scroll_offset(&mut self, offset: f32) {
         self.cutscene_scroll_offset = offset;
+    }
+
+    pub fn set_cutscene_bg_color(&mut self, index: u8) {
+        self.cutscene_bg_color_index = index;
+    }
+
+    pub fn set_cutscene_bg_opaque(&mut self, opaque: bool) {
+        self.cutscene_bg_opaque = opaque;
     }
 
     pub fn set_cutscene_char_index(&mut self, index: usize) {
@@ -1810,8 +1822,9 @@ impl Ppu {
     }
 
     fn render_cutscene(&mut self) {
-        // Clear screen with black background
-        let bg_color = self.palette[0]; // Black
+        // Clear screen with the configured background color (black by default,
+        // matching original behavior; per-level intros can set a different color).
+        let bg_color = self.palette[self.cutscene_bg_color_index as usize];
         for i in (0..self.screen_buffer.len()).step_by(4) {
             self.screen_buffer[i] = bg_color.0;     // R
             self.screen_buffer[i + 1] = bg_color.1; // G
@@ -1819,14 +1832,23 @@ impl Ppu {
             self.screen_buffer[i + 3] = 255;        // A
         }
 
-        // Render cutscene image if available (centered at top)
+        const TOP_PADDING: usize = 10;
+        const TEXT_GAP: usize = 8;
+        let line_height: usize = 12;
+
+        // Render cutscene image if available (centered horizontally, near the top)
+        let mut img_bottom = TOP_PADDING; // Falls back to just the padding if there's no image
         if let Some(ref image) = self.cutscene_image {
-            let img_x = (SCREEN_WIDTH - 64) / 2; // Center the 64px wide image
-            let img_y = 30; // Position near top
+            let img_h = image.len();
+            let img_w = image.get(0).map_or(0, |row| row.len());
+            let img_x = SCREEN_WIDTH.saturating_sub(img_w) / 2;
+            let img_y = TOP_PADDING;
+            img_bottom = img_y + img_h;
+            let opaque = self.cutscene_bg_opaque;
 
             for (y, row) in image.iter().enumerate() {
                 for (x, &palette_idx) in row.iter().enumerate() {
-                    if palette_idx != 0 { // 0 = transparent
+                    if opaque || palette_idx != 0 { // 0 = transparent unless drawing opaque
                         let screen_x = img_x + x;
                         let screen_y = img_y + y;
 
@@ -1843,10 +1865,9 @@ impl Ppu {
             }
         }
 
-        // Render text lines with typing effect
+        // Render text lines with typing effect, starting just below the image
         let text_color = self.palette[15]; // White
-        let start_y = 130; // Start below image
-        let line_height = 12;
+        let start_y = img_bottom + TEXT_GAP;
 
         // Clone text lines to avoid borrow conflict
         let text_lines = self.cutscene_text.clone();
@@ -1854,8 +1875,10 @@ impl Ppu {
 
         // Track how many characters we've processed across all lines
         let mut chars_processed = 0;
+        let mut last_text_y = start_y;
         for (i, line) in text_lines.iter().enumerate() {
-            let y = start_y + (i * line_height) as usize;
+            let y = start_y + (i * line_height);
+            last_text_y = y;
 
             // Calculate how many characters of this line to show
             let chars_to_show = if char_index > chars_processed {
@@ -1880,9 +1903,11 @@ impl Ppu {
             chars_processed += line.len();
         }
 
-        // Add "PRESS BUTTON" prompt at bottom
+        // Add "PRESS BUTTON" prompt below the text block, clamped so it never runs
+        // off the bottom of the screen for taller images/longer text.
         let prompt_color = self.palette[37]; // Yellow
-        self.render_small_text("PRESS ANY BUTTON", 100, 215, prompt_color);
+        let prompt_y = (last_text_y + line_height + 4).min(SCREEN_HEIGHT.saturating_sub(10));
+        self.render_small_text("PRESS ANY BUTTON", 100, prompt_y, prompt_color);
     }
 
     fn render_platformer_background(&mut self) {
