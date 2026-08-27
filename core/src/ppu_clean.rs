@@ -313,6 +313,9 @@ pub struct Ppu {
     zsynth_mode: bool,
     // Platformer game mode
     platformer_mode: bool,
+    // Tracer effect for player sprite (motion blur)
+    player_tracer_positions: Vec<(f32, f32)>, // Circular buffer of last N positions
+    player_tracer_max: usize, // Max tracer positions to store
     // Title screen mode
     title_screen_mode: bool,
     title_logo: Option<Vec<Vec<u8>>>, // 320x240 full-screen title image
@@ -366,6 +369,8 @@ impl Ppu {
             intro_text: String::new(),
             zsynth_mode: false,
             platformer_mode: false,
+            player_tracer_positions: Vec::with_capacity(4),
+            player_tracer_max: 4,
             title_screen_mode: false,
             title_logo: None,
             show_press_start: false,
@@ -684,6 +689,36 @@ impl Ppu {
         let sprites_with_data = self.sprites_with_data.clone();
         let scroll_x = self.scroll_x;
         let scroll_y = self.scroll_y;
+
+        // Update player tracer buffer with current position
+        // Check sprites_with_data first (platformer uses this)
+        if let Some(player_sprite) = sprites_with_data.first() {
+            let screen_x = player_sprite.x - scroll_x;
+            let screen_y = player_sprite.y - scroll_y;
+
+            // Add current position to tracer buffer
+            self.player_tracer_positions.push((screen_x, screen_y));
+
+            // Keep only the last N positions (circular buffer)
+            if self.player_tracer_positions.len() > self.player_tracer_max {
+                self.player_tracer_positions.remove(0);
+            }
+
+            // Render tracer positions first (with fading alpha)
+            // Clone positions to avoid borrow conflicts
+            let tracer_positions = self.player_tracer_positions.clone();
+            let tracer_count = tracer_positions.len();
+            for (i, &(x, y)) in tracer_positions.iter().enumerate() {
+                // Calculate alpha based on age (older = more transparent)
+                // Skip the most recent position (will be rendered normally below)
+                if i < tracer_count - 1 {
+                    let age_factor = (i as f32) / (tracer_count as f32);
+                    let alpha_f = age_factor * 0.5; // 0 to 0.5 (50% opacity max for oldest)
+                    // Use the player's current pixel data for all tracer positions
+                    self.render_sprite_with_data_alpha(x, y, &player_sprite.pixel_data, player_sprite.flip_horizontal, 0, player_sprite.scale, alpha_f);
+                }
+            }
+        }
 
         // Render old-style sprites (with sprite_id)
         for sprite in &sprites {
@@ -2111,34 +2146,49 @@ impl Ppu {
     }
 
     fn render_platformer_sprite(&mut self, x: f32, y: f32, sprite_id: u32, flip_horizontal: bool) {
+        self.render_platformer_sprite_with_alpha(x, y, sprite_id, flip_horizontal, 255);
+    }
+
+    fn render_platformer_sprite_with_alpha(&mut self, x: f32, y: f32, sprite_id: u32, flip_horizontal: bool, alpha: u8) {
         // Fallback: render a simple square for old-style sprites
         let player_color = self.palette[47]; // Yellow/Orange
         let outline_color = self.palette[0]; // Black
-        
+
         let sprite_x = x as i32;
         let sprite_y = y as i32;
-        
+
         // Draw player as a simple colored square with black outline
         for dy in -8..8 {
             for dx in -8..8 {
                 let pixel_x = sprite_x + dx;
                 let pixel_y = sprite_y + dy;
-                
-                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 && 
+
+                if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 &&
                    pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
                     let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
                     if idx < self.screen_buffer.len() - 3 {
                         // Black outline
                         if dx.abs() == 7 || dy.abs() == 7 {
-                            self.screen_buffer[idx] = outline_color.0;
-                            self.screen_buffer[idx + 1] = outline_color.1;
-                            self.screen_buffer[idx + 2] = outline_color.2;
+                            // Blend outline with existing pixels
+                            let existing_r = self.screen_buffer[idx];
+                            let existing_g = self.screen_buffer[idx + 1];
+                            let existing_b = self.screen_buffer[idx + 2];
+
+                            let alpha_f = alpha as f32 / 255.0;
+                            self.screen_buffer[idx] = ((outline_color.0 as f32 * alpha_f) + (existing_r as f32 * (1.0 - alpha_f))) as u8;
+                            self.screen_buffer[idx + 1] = ((outline_color.1 as f32 * alpha_f) + (existing_g as f32 * (1.0 - alpha_f))) as u8;
+                            self.screen_buffer[idx + 2] = ((outline_color.2 as f32 * alpha_f) + (existing_b as f32 * (1.0 - alpha_f))) as u8;
                             self.screen_buffer[idx + 3] = 255;
                         } else {
-                            // Player color fill
-                            self.screen_buffer[idx] = player_color.0;
-                            self.screen_buffer[idx + 1] = player_color.1;
-                            self.screen_buffer[idx + 2] = player_color.2;
+                            // Blend player color with existing pixels
+                            let existing_r = self.screen_buffer[idx];
+                            let existing_g = self.screen_buffer[idx + 1];
+                            let existing_b = self.screen_buffer[idx + 2];
+
+                            let alpha_f = alpha as f32 / 255.0;
+                            self.screen_buffer[idx] = ((player_color.0 as f32 * alpha_f) + (existing_r as f32 * (1.0 - alpha_f))) as u8;
+                            self.screen_buffer[idx + 1] = ((player_color.1 as f32 * alpha_f) + (existing_g as f32 * (1.0 - alpha_f))) as u8;
+                            self.screen_buffer[idx + 2] = ((player_color.2 as f32 * alpha_f) + (existing_b as f32 * (1.0 - alpha_f))) as u8;
                             self.screen_buffer[idx + 3] = 255;
                         }
                     }
@@ -2147,6 +2197,62 @@ impl Ppu {
         }
     }
     
+    fn render_sprite_with_data_alpha(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool, palette_cycle: u8, scale: f32, alpha: f32) {
+        if pixel_data.is_empty() || alpha <= 0.0 {
+            return;
+        }
+
+        let sprite_x = x as i32;
+        let sprite_y = y as i32;
+        let sprite_height = pixel_data.len();
+        let sprite_width = pixel_data[0].len();
+        let scale_int = scale as i32;
+
+        for (row, sprite_row) in pixel_data.iter().enumerate() {
+            for (col, &palette_index) in sprite_row.iter().enumerate() {
+                if palette_index == 0 || palette_index == 255 {
+                    continue;
+                }
+
+                let actual_col = if flip_horizontal {
+                    sprite_width - 1 - col
+                } else {
+                    col
+                };
+
+                let scaled_width = (sprite_width as i32) * scale_int;
+                let scaled_height = (sprite_height as i32) * scale_int;
+                let base_x = sprite_x - (scaled_width / 2);
+                let base_y = sprite_y - (scaled_height / 2);
+
+                for sy in 0..scale_int {
+                    for sx in 0..scale_int {
+                        let pixel_x = base_x + (actual_col as i32 * scale_int) + sx;
+                        let pixel_y = base_y + (row as i32 * scale_int) + sy;
+
+                        if pixel_x >= 0 && pixel_x < SCREEN_WIDTH as i32 &&
+                           pixel_y >= 0 && pixel_y < SCREEN_HEIGHT as i32 {
+                            let idx = ((pixel_y as usize) * SCREEN_WIDTH + (pixel_x as usize)) * 4;
+                            if idx < self.screen_buffer.len() - 3 {
+                                let color = self.palette[palette_index as usize];
+
+                                // Alpha blend with existing background
+                                let existing_r = self.screen_buffer[idx];
+                                let existing_g = self.screen_buffer[idx + 1];
+                                let existing_b = self.screen_buffer[idx + 2];
+
+                                self.screen_buffer[idx] = ((color.0 as f32 * alpha) + (existing_r as f32 * (1.0 - alpha))) as u8;
+                                self.screen_buffer[idx + 1] = ((color.1 as f32 * alpha) + (existing_g as f32 * (1.0 - alpha))) as u8;
+                                self.screen_buffer[idx + 2] = ((color.2 as f32 * alpha) + (existing_b as f32 * (1.0 - alpha))) as u8;
+                                self.screen_buffer[idx + 3] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn render_sprite_with_data(&mut self, x: f32, y: f32, pixel_data: &[Vec<u8>], flip_horizontal: bool, palette_cycle: u8, scale: f32) {
         if pixel_data.is_empty() {
             return;

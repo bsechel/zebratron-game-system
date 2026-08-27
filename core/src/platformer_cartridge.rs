@@ -1162,6 +1162,11 @@ impl PlatformerCartridge {
     }
 
     // Sound effect management
+    // MEMORY FIX: Check if there are sounds before allocating Vec
+    pub fn has_pending_sounds(&self) -> bool {
+        !self.pending_sounds.is_empty()
+    }
+
     pub fn get_pending_sounds(&self) -> Vec<u32> {
         self.pending_sounds.clone()
     }

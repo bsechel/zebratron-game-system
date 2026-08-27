@@ -510,10 +510,11 @@ impl HambertCartridge {
     }
 
     fn check_platform_collisions(&mut self) {
-        let mut platforms = Vec::new();
-        for (i, entity) in self.entities.iter().enumerate() {
+        // MEMORY FIX: Store only collision box data instead of cloning entire entities
+        let mut platforms: Vec<(f32, f32, f32, f32)> = Vec::new(); // (x, y, width, height)
+        for entity in self.entities.iter() {
             if entity.entity_type == EntityType::Platform && entity.active {
-                platforms.push((i, entity.clone()));
+                platforms.push((entity.x, entity.y, entity.width, entity.height));
             }
         }
 
@@ -529,13 +530,13 @@ impl HambertCartridge {
 
             entity.on_ground = false;
 
-            for (_, platform) in &platforms {
-                if entity.x < platform.x + platform.width &&
-                   entity.x + entity.width > platform.x &&
-                   entity.y + entity.height > platform.y &&
-                   entity.y + entity.height < platform.y + platform.height + 10.0 &&
+            for (platform_x, platform_y, platform_width, platform_height) in &platforms {
+                if entity.x < platform_x + platform_width &&
+                   entity.x + entity.width > *platform_x &&
+                   entity.y + entity.height > *platform_y &&
+                   entity.y + entity.height < *platform_y + *platform_height + 10.0 &&
                    entity.vel_y >= 0.0 {
-                    entity.y = platform.y - entity.height;
+                    entity.y = *platform_y - entity.height;
                     entity.vel_y = 0.0;
                     entity.on_ground = true;
                     break;
@@ -819,6 +820,32 @@ impl HambertCartridge {
     pub fn get_entity_count(&self) -> usize {
         self.entities.len()
     }
+
+    // ZERO-ALLOCATION ENTITY ACCESS: Return primitives directly instead of JsValue objects
+    // This eliminates ~600 JsValue allocations per second (10 entities × 6 fields × 60fps)
+    pub fn get_entity_x(&self, index: usize) -> f32 {
+        self.entities.get(index).map(|e| e.x).unwrap_or(0.0)
+    }
+
+    pub fn get_entity_y(&self, index: usize) -> f32 {
+        self.entities.get(index).map(|e| e.y).unwrap_or(0.0)
+    }
+
+    pub fn get_entity_sprite_id(&self, index: usize) -> u32 {
+        self.entities.get(index).map(|e| e.sprite_id).unwrap_or(0)
+    }
+
+    pub fn get_entity_active(&self, index: usize) -> bool {
+        self.entities.get(index).map(|e| e.active).unwrap_or(false)
+    }
+
+    pub fn get_entity_facing_left(&self, index: usize) -> bool {
+        self.entities.get(index).map(|e| e.facing_left).unwrap_or(false)
+    }
+
+    pub fn get_text_index(&self) -> usize {
+        self.text_index
+    }
 }
 
 // Pure Rust methods for native runtime (not exported to WASM)
@@ -974,6 +1001,11 @@ impl HambertCartridge {
 
 
     // Audio interface methods
+    // MEMORY FIX: Check if there are sounds before allocating Vec
+    pub fn has_pending_sounds(&self) -> bool {
+        !self.pending_sounds.is_empty()
+    }
+
     pub fn get_pending_sounds(&self) -> Vec<u32> {
         self.pending_sounds.iter().map(|&sound| sound as u32).collect()
     }

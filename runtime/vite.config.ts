@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  base: '/zgs/',
+  base: '/zgs-static/',
   server: {
     fs: {
       allow: ['..']

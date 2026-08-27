@@ -2,7 +2,7 @@
 
 > **🎮 A Game Console with a Dream**
 >
-> The Zebratron Game System is a modern implementation of a classic 8-bit console that didn't quite exist. It's a low-key "fantasy console" designed to emulate authentic hardware constraints. We're making the software version first, and then working toward a prototype.
+> The Zebratron Game System is a modern game framework with hardware-inspired architecture and retro constraints. Unlike traditional fantasy consoles, it's designed for dual deployment: running identically in web browsers (WASM) and on native hardware (Raspberry Pi). The goal is to eventually become a dedicated handheld console, starting with software-first development.
 
 > **⚠️ Experimental Prototype Phase**
 > This project is currently in early experimental development. The architecture, APIs, and functionality are evolving and subject to significant changes. Not recommended for production use at this time.
@@ -94,10 +94,139 @@ The Zebratron core is a "Single Source of Truth" that drives multiple display an
 
 ### Authenticity
 
-- **8-Bit Aesthetics**: Enforced palette and sprite limitations
-- **Chip-Tune Audio**: Classic sound synthesis
-- **Scanline Rendering**: Authentic retro visual effects
-- **Memory Constraints**: Realistic limitations encourage creativity
+- **Tile-Based Rendering**: Hardware-inspired PPU with viewport culling and palette indirection
+- **200×15 Scrolling Worlds**: Large tilemap system with camera-based rendering
+- **Sprite System**: Layer-based sprite rendering with 128-color indexed palette
+- **Chip-Tune Audio**: Digital oscillators with SID-style filters and effects
+- **Memory Constraints**: Authentic limitations encourage creative solutions
+
+## 🏗️ Technical Architecture
+
+> **📐 For detailed architecture diagrams and component documentation, see [ARCHITECTURE.md](ARCHITECTURE.md)**
+
+### High-Level System Overview
+
+```mermaid
+graph TB
+    subgraph "Platforms"
+        Web[🌐 Web Browser]
+        Pi[🍓 Raspberry Pi]
+    end
+
+    subgraph "Runtime Layer"
+        WebRT[TypeScript Runtime<br/>Canvas + Web Audio]
+        NativeRT[Rust Native Runtime<br/>minifb + cpal]
+    end
+
+    subgraph "Core Engine (Rust)"
+        Core[ZebratronGameSystem<br/>CPU • PPU • APU • Memory]
+        Cart[Game Cartridges<br/>Hambert • Platformer • Z-Synth]
+    end
+
+    Web --> WebRT
+    Pi --> NativeRT
+    WebRT --> Core
+    NativeRT --> Core
+    Core --> Cart
+
+    style Core fill:#ffd700
+    style Cart fill:#98fb98
+    style Web fill:#87ceeb
+    style Pi fill:#ff69b4
+```
+
+### 📺 System Specifications
+
+```mermaid
+graph TB
+    subgraph Display["📺 Display System"]
+        Screen["Screen Resolution: 320×240 pixels"]
+        Aspect["Aspect Ratio: 4:3"]
+        TileSize["Tile Size: 16×16 pixels"]
+        TileColors["Colors per Tile: 256"]
+        WorldTiles["World Size: 200×15 tiles"]
+        WorldPixels["World Dimensions: 3200×240 pixels"]
+    end
+
+    subgraph Graphics["🎨 Graphics Engine"]
+        PaletteColors["Master Palette: 128 indexed colors"]
+        PaletteFamilies["Palette Organization: 8 families × 16 tones"]
+        MaxSprites["Maximum Sprites: 128"]
+        ScanlineSprites["Sprites per Scanline: 16"]
+        Layers["Render Layers: BG → Sprites → FG"]
+    end
+
+    subgraph Audio["🔊 Audio System"]
+        Channels["Base Channels: 5"]
+        ChannelTypes["Channel Types: Pulse×2, Triangle, Noise, Digital Osc"]
+        Filter["SID-style Resonant Filter"]
+        Delay["Digital Delay/Reverb"]
+        Poly["Polyphony: 16 simultaneous notes"]
+    end
+
+    subgraph Controls["🎮 Input System"]
+        Dpad["D-Pad: ↑ ↓ ← →"]
+        ButtonA["A Button: Jump/Confirm"]
+        ButtonB["B Button: Attack/Cancel"]
+        Start["START Button"]
+        Select["SELECT Button"]
+    end
+
+    subgraph Performance["⚡ Performance"]
+        FPS["Target Framerate: 60 FPS"]
+        Platforms["Platforms: Browser & Native"]
+        Culling["Viewport Culling: Only visible tiles"]
+        Optimization["Memory: Mobile-optimized"]
+    end
+
+    style Display fill:#ffd700
+    style Graphics fill:#98fb98
+    style Audio fill:#87ceeb
+    style Controls fill:#ffb6c1
+    style Performance fill:#dda0dd
+```
+
+### PPU (Picture Processing Unit)
+
+The PPU implements a **tile-based rendering pipeline** inspired by classic hardware:
+
+- **Viewport Culling**: Only renders tiles visible in the 320×240 screen area, calculating `tile_start_x/y` through `tile_end_x/y` based on camera scroll position
+- **16×16 Pixel Tiles**: Each tile stores 256 palette indices (16×16 array)
+- **Palette Indirection**: Tiles reference a 128-color master palette, not direct RGB values
+- **Scroll System**: Camera offset (`scroll_x`, `scroll_y`) adjusts all tile positions for smooth scrolling
+- **Layered Rendering**: Background tiles → sprites → foreground elements
+- **Large Worlds**: 200×15 tile maps = 3200×240 pixel scrolling levels
+
+**Rendering Pipeline** (per frame):
+```
+1. Clear framebuffer to sky color
+2. Calculate visible tile range from scroll position
+3. For each visible tile:
+   - Fetch tile data from tilemap[y][x]
+   - Look up tile pixel array from tileset
+   - Render each pixel using palette[pixel_index]
+4. Render sprites over tiles
+5. Copy framebuffer to canvas
+```
+
+### APU (Audio Processing Unit)
+
+Modern audio synthesis with retro constraints:
+
+- **5 Base Channels**: Pulse (×2), Triangle, Noise, Digital oscillator (like NES APU)
+- **Polyphonic Synthesis**: Up to 16 simultaneous notes for Z-Synth cartridge
+- **SID-Style Filter**: Resonant lowpass/highpass/bandpass with self-oscillation
+- **Digital Delay**: Configurable echo/reverb effects with feedback
+- **Sample Playback**: 8-bit PCM samples at variable rates
+
+**Why It's Different from Fantasy Consoles:**
+
+Unlike PICO-8 or TIC-80 which are fully self-contained development environments, ZebratronGameSystem is:
+
+1. **Dual-Target Architecture**: Same Rust core runs in browser (WASM) AND natively (Pi/desktop)
+2. **Hardware-Authentic Rendering**: Actual tile fetching and viewport culling, not a full framebuffer write
+3. **External Tooling**: Uses industry-standard tools (Tiled, Aseprite) instead of built-in editors
+4. **Physical Hardware Goal**: Designed from the start to become a dedicated handheld console
 
 ## 📦 Cartridge System Evolution
 
@@ -190,37 +319,47 @@ This evolution will transform ZebratronGameSystem from a demo platform into a tr
 
 ## 🛠️ Development Roadmap
 
-### Phase 1: Core System (Months 1-3)
+### Phase 1: Core System ✅ Complete
 
-- [ ] WebAssembly CPU emulator
-- [ ] Basic PPU with tile rendering
-- [ ] Memory management system
-- [ ] Simple audio synthesis
-- [ ] JavaScript runtime interface
+- [x] WebAssembly runtime integration
+- [x] PPU with tile-based rendering and viewport culling
+- [x] Memory management system
+- [x] Multi-channel audio synthesis (APU)
+- [x] JavaScript/WASM runtime interface
+- [x] Native runtime (Pi + desktop support)
 
-### Phase 2: Graphics & Audio (Months 4-6)
+### Phase 2: Graphics & Audio ✅ Complete
 
-- [ ] Sprite rendering with collision detection
-- [ ] Multi-layer scrolling engine
-- [ ] Advanced audio features (envelopes, effects)
-- [ ] Asset conversion pipeline
-- [ ] Performance optimization
+- [x] Sprite rendering with layering
+- [x] Large scrolling tilemap engine (200×15 tiles)
+- [x] SID-style filters and digital delay effects
+- [x] 128-color indexed palette system
+- [x] Collision detection and physics
+- [x] Performance optimization (memory leak fixes)
 
-### Phase 3: Developer Tools (Months 7-9)
+### Phase 3: Cartridge System (Current Focus)
 
-- [ ] Real-time debugger
-- [ ] Visual sprite/tile editor
-- [ ] Game development IDE
-- [ ] Documentation and tutorials
-- [ ] Example games
+- [ ] Dynamic asset loading system
+- [ ] `.zgs` cartridge file format specification
+- [ ] Asset conversion tools (PNG → tileset, etc.)
+- [ ] Cartridge packaging utilities
+- [ ] Hot-reload development workflow
 
-### Phase 4: Advanced Features (Months 10-12)
+### Phase 4: Developer Tools & Distribution
 
-- [ ] Scripting language integration
-- [ ] Save state system
-- [ ] Networking for multiplayer
-- [ ] Hardware implementation research
-- [ ] Community game showcase
+- [ ] Web-based cartridge library
+- [ ] Real-time debugger and profiler
+- [ ] Visual tile/sprite editor integration
+- [ ] Documentation and example games
+- [ ] Community cartridge sharing platform
+
+### Phase 5: Hardware Implementation
+
+- [ ] Raspberry Pi Zero optimization
+- [ ] Custom PCB design research
+- [ ] Battery and display integration
+- [ ] Physical controls and buttons
+- [ ] Handheld console prototype
 
 ## 🛠️ Developer Guide
 
@@ -384,9 +523,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Hardware Architecture Inspired By:**
 
-- Classic 8-bit game consoles - CPU/PPU/APU separation model and 8-bit gaming architecture
-- [PICO-8 Fantasy Console](https://www.lexaloffle.com/pico-8.php) - Color palette limitations and pixel art constraints
-- [TIC-80 Fantasy Console](https://tic80.com/) - Modern retro development workflow
+- **Nintendo Entertainment System (NES)** - PPU tile rendering, scanline timing, APU channel structure
+- **Commodore 64 SID chip** - Resonant filters, digital synthesis, envelope control
+- **Sega Master System** - Large scrolling tilemaps and palette-based sprite system
+- [PICO-8 Fantasy Console](https://www.lexaloffle.com/pico-8.php) - Constraints-driven creativity, limited palette aesthetics
+- [TIC-80 Fantasy Console](https://tic80.com/) - Modern retro development workflow and external tool integration
 
 **Character Assets:**
 

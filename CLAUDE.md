@@ -3,6 +3,14 @@
 ## Project Overview
 A custom 8-bit style game system inspired by classic retro consoles, built for web browsers using WebAssembly with a focus on making scrolling games easy to develop.
 
+## Token Efficiency Guidelines
+(General token-judiciousness rules live in the global `~/.claude/CLAUDE.md`. This section is just the project-specific specifics.)
+
+- **Builds**: Rust/WASM builds output ~10k tokens of warnings.
+  - Use `./build-quiet.sh` (filters to errors only) OR
+  - Ask user to run `npm run build` themselves
+  - Never run builds with full output unless diagnosing build errors
+
 ## Build Commands
 ```bash
 # Install dependencies
