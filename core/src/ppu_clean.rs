@@ -1836,13 +1836,13 @@ impl Ppu {
         const TEXT_GAP: usize = 8;
         let line_height: usize = 12;
 
-        // Render cutscene image if available (centered horizontally, near the top)
+        // Render cutscene image if available (centered horizontally and vertically)
         let mut img_bottom = TOP_PADDING; // Falls back to just the padding if there's no image
         if let Some(ref image) = self.cutscene_image {
             let img_h = image.len();
             let img_w = image.get(0).map_or(0, |row| row.len());
             let img_x = SCREEN_WIDTH.saturating_sub(img_w) / 2;
-            let img_y = TOP_PADDING;
+            let img_y = SCREEN_HEIGHT.saturating_sub(img_h) / 2;
             img_bottom = img_y + img_h;
             let opaque = self.cutscene_bg_opaque;
 
