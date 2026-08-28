@@ -1251,6 +1251,9 @@ pub struct ZSynthCartridge {
     midi_arpeggio_timers: HashMap<u32, f32>,  // Arpeggio timers for MIDI notes
     midi_arpeggio_step: HashMap<u32, usize>,  // Arpeggio steps for MIDI notes
     midi_current_arpeggio_notes: HashMap<u32, u32>,  // Current arpeggio note for each MIDI note
+    // When false (default), held notes sustain normally instead of force-arpeggiating —
+    // the arpeggio machinery above stays intact as an opt-in performance mode.
+    arpeggio_mode: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1340,7 +1343,16 @@ impl ZSynthCartridge {
             midi_arpeggio_timers: HashMap::new(),
             midi_arpeggio_step: HashMap::new(),
             midi_current_arpeggio_notes: HashMap::new(),
+            arpeggio_mode: false,
         }
+    }
+
+    pub fn set_arpeggio_mode(&mut self, enabled: bool) {
+        self.arpeggio_mode = enabled;
+    }
+
+    pub fn get_arpeggio_mode(&self) -> bool {
+        self.arpeggio_mode
     }
 
     pub fn handle_key_down(&mut self, key: char) {

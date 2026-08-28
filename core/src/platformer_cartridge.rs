@@ -196,13 +196,30 @@ const PELLET_BOX_SPRITE: [[u8; 16]; 16] = [
     [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
 ];
 
-// Level 1 Music - Converted from MIDI (120 BPM)
-// Format: (MIDI note number, duration in 16th notes)
+// Level 1 Music - Lead melody
+// Format: (MIDI note number, duration in 16th notes). note == 0 is a rest.
+// 8-bar phrase transcribed from a reference piano-roll (source bars 9-16,
+// treated as loop bars 1-8). Best-effort reading off a screenshot — flag any
+// hit that sounds wrong once it's audible and it's a quick fix.
+// Raised two octaves total from the original transcribed pitches (now
+// E4/B4/C5/A4/G4/D4/D#4 instead of E2/B2/C3/A2/G2/D2/D#2) per feedback.
 const LEVEL1_LEAD: &[(u32, u32)] = &[
-    (65, 3), (63, 1), (61, 3), (60, 1), (61, 1), (60, 1), (58, 1), (57, 1),
-    (58, 2), (61, 1), (60, 3), (53, 1), (53, 2), (52, 1), (53, 4), (65, 3),
-    (63, 1), (61, 3), (60, 1), (61, 1), (60, 1), (58, 1), (57, 1), (58, 1),
-    (61, 2), (60, 7),  // Shortened from 9 to 7 to add rest at end
+    // Bar 1: E4 half note, B4 half note (call-and-response, mirrors the bass)
+    (64, 8), (71, 8),
+    // Bar 2: C5 pickup, then a B4 walk-down figure
+    (72, 1), (0, 2), (71, 1), (0, 4), (71, 2), (0, 2), (71, 1), (0, 3),
+    // Bar 3: repeats bar 1
+    (64, 8), (71, 8),
+    // Bar 4: repeats bar 2's shape with an A4 passing tone instead of B4's pickup
+    (0, 2), (72, 1), (0, 3), (69, 1), (0, 1), (71, 3), (0, 1), (71, 1), (0, 3),
+    // Bar 5: descending run C5 -> A4 -> B4 -> A4 -> G4 -> A4
+    (0, 3), (72, 1), (0, 2), (69, 1), (0, 1), (71, 1), (0, 2), (69, 1), (0, 1), (67, 1), (0, 1), (69, 1),
+    // Bar 6: sparse low D4/E4 figure
+    (0, 2), (62, 1), (0, 3), (62, 1), (0, 2), (64, 1), (0, 6),
+    // Bar 7: descending run again, C5 -> B4 -> A4 -> B4 -> G4
+    (0, 2), (72, 1), (0, 3), (71, 1), (69, 1), (71, 2), (67, 1), (0, 5),
+    // Bar 8: resolves A4 -> D#4 -> E4, leading back into bar 1's E4
+    (69, 1), (0, 1), (63, 1), (0, 1), (64, 1), (0, 11),
 ];
 
 // Second lead melody - single voice melody (2 bars + 2 bars rest = 48 16th notes)
@@ -216,18 +233,25 @@ const LEVEL1_LEAD2_UPPER: &[(u32, u32)] = &[
     (72, 1), (73, 1), (74, 1), (73, 1), (72, 8),
 ];
 
-// Bass sequence with rests (0 = rest) - one octave lower, short staccato notes
-// Extended to 48 16th notes to match lead melody loop
+// Bass sequence with rests (0 = rest), MIDI note numbers, one entry per 16th note.
+// 4-bar call-and-response phrase: root (E2=40) for a bar, then the fifth (B2=47)
+// answers for a bar, twice. Every bar shares the same groove (a reference
+// single-bar piano-roll): quarter-note pulse on beats 1/2/3/4 plus two
+// syncopated pickup hits (just before beat 3, and just before the bar ends,
+// pushing into the next bar).
 const LEVEL1_BASS_FULL: &[u32] = &[
-    41, 0, 48, 0, 53, 0, 0, 0,  // F2, C3, F3 (down from F3, C4, F4)
-    41, 0, 46, 0, 49, 0, 0, 0,  // F2, A#2, C#3 (down from F3, A#3, C#4)
-    // Repeat the pattern
-    41, 0, 48, 0, 53, 0, 0, 0,  // F2, C3, F3
-    41, 0, 46, 0, 49, 0, 0, 0,  // F2, A#2, C#3
+    // Bar 1 - root (E2)
+    40, 0, 0, 0,  40, 0, 0, 40,  40, 0, 0, 0,  40, 0, 0, 40,
+    // Bar 2 - fifth (B2) answers
+    47, 0, 0, 0,  47, 0, 0, 47,  47, 0, 0, 0,  47, 0, 0, 47,
+    // Bar 3 - root (E2)
+    40, 0, 0, 0,  40, 0, 0, 40,  40, 0, 0, 0,  40, 0, 0, 40,
+    // Bar 4 - fifth (B2) answers
+    47, 0, 0, 0,  47, 0, 0, 47,  47, 0, 0, 0,  47, 0, 0, 47,
 ];
 
-// 80 BPM = 11.25 frames per 16th note at 60fps
-const MUSIC_FRAMES_PER_16TH: f32 = 11.25;
+// 100 BPM = 9.0 frames per 16th note at 60fps (raised from 80 BPM per feedback)
+const MUSIC_FRAMES_PER_16TH: f32 = 9.0;
 
 // Hexagnome sprite - 26×32 stone gnome enemy (255 = transparent)
 const HEXAGNOME_SPRITE: [[u8; 26]; 32] = [
@@ -1517,19 +1541,14 @@ impl PlatformerCartridge {
             self.music_16th_counter += 1;
             self.lead_16th_counter += 1;
 
-            // Check if we've completed a 48 16th note pattern
-            if self.lead_16th_counter >= 48 {
+            // Loop the lead melody once it's played its full length (upper
+            // harmony/pattern-2 switching removed - that voice is muted for now,
+            // so just repeat pattern 1 from the top).
+            let lead_total_16ths: u32 = LEVEL1_LEAD.iter().map(|(_, d)| *d).sum();
+            if self.lead_16th_counter >= lead_total_16ths {
                 self.lead_16th_counter = 0;
-                // Switch to next pattern (1 -> 2 -> 1)
-                self.lead_pattern = if self.lead_pattern == 1 { 2 } else { 1 };
-                // Reset all note indices
                 self.lead_note_index = 0;
                 self.lead_note_remaining = LEVEL1_LEAD[0].1;
-                self.lead2_lower_index = 0;
-                self.lead2_lower_remaining = 0; // No lower voice
-                self.lead2_upper_index = 0;
-                self.lead2_upper_remaining = LEVEL1_LEAD2_UPPER[0].1;
-                self.bass_16th_index = 0;
             }
 
             // Advance bass index every 16th note
@@ -1572,13 +1591,18 @@ impl PlatformerCartridge {
     }
 
     pub fn should_play_kick(&self) -> bool {
-        // Kick drum hits on first beat of each bar (every 16 16th notes = 1 bar)
-        self.music_16th_counter % 16 == 0
+        // Four-on-the-floor: kick hits on every beat (every 4 16th notes).
+        // Gated to the single frame where a new 16th-note tick just landed
+        // (music_timer < 1.0, same pattern should_play_bass already uses) —
+        // without it, this stays true for all ~11 frames between ticks, which
+        // continuously re-triggers trigger_percussion and never lets the kick's
+        // envelope actually decay, making it far louder/longer than intended.
+        self.music_16th_counter % 4 == 0 && self.music_timer < 1.0
     }
 
     pub fn should_play_snare(&self) -> bool {
         // Snare hits on beat 3 of second bar (16th note 24 in 32-note pattern)
-        self.music_16th_counter % 32 == 24
+        self.music_16th_counter % 32 == 24 && self.music_timer < 1.0
     }
 
     pub fn should_play_lead(&self) -> bool {

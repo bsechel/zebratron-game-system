@@ -962,10 +962,14 @@ impl ZebratronCartridgeSystem {
             self.apu.sid_voice1_stop();
         }
 
-        // Play lead melody on voice 2 (pulse wave) - respect note durations
+        // Play lead melody on voice 2 (pulse wave) - respect note durations.
+        // note == 0 is a rest sentinel: should_play_lead still fires on schedule,
+        // but we skip triggering so the voice stays silent for that entry's duration.
         if should_play_lead {
             if let Some(note) = lead_note {
-                self.apu.sid_voice2_play_note(note as u8, 0);
+                if note != 0 {
+                    self.apu.sid_voice2_play_note(note as u8, 0);
+                }
             }
         }
 
@@ -974,28 +978,26 @@ impl ZebratronCartridgeSystem {
             self.apu.sid_voice2_stop();
         }
 
-        // Play upper harmony on voice 3 (pattern 2 only)
-        if should_play_upper {
-            if let Some(note) = upper_note {
-                self.apu.sid_voice3_play_note(note as u8, 0);
-            }
-        }
+        // Upper harmony (voice 3, pattern 2) temporarily silenced while dialing in
+        // the new lead melody. To restore: uncomment below.
+        let _ = (should_play_upper, upper_note, should_stop_upper);
+        // if should_play_upper {
+        //     if let Some(note) = upper_note {
+        //         self.apu.sid_voice3_play_note(note as u8, 0);
+        //     }
+        // }
+        // if should_stop_upper {
+        //     self.apu.sid_voice3_stop();
+        // }
 
-        // Stop upper harmony after note duration
-        if should_stop_upper {
-            self.apu.sid_voice3_stop();
-        }
-
-        // Kick drum on first beat of bar
+        // Kick drum, four-on-the-floor
         if should_play_kick {
-            // Short low frequency blip: F2 (41) to F1 (29), 50ms duration
-            self.apu.play_sound_effect(41, 29, 0, 0.05);
+            self.apu.trigger_percussion(0, 0.35);
         }
 
         // Snare on third beat of bar
         if should_play_snare {
-            // Higher pitched noise: C5 (72) to C4 (60), noise waveform (4), 50ms duration
-            self.apu.play_sound_effect(72, 60, 4, 0.05);
+            self.apu.trigger_percussion(1, 0.5);
         }
     }
 }

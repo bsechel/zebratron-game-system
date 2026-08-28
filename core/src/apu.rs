@@ -67,6 +67,14 @@ pub struct Apu {
     sid_enabled: bool,
     sid_volume: f32,
     poly_volume: f32,
+
+    // Persistent noise-based percussion voices — real drum hits, independently
+    // triggerable (unlike the old monophonic play_sound_effect hack, these can
+    // sound simultaneously, e.g. kick + snare together).
+    percussion_kick: DigitalOscillator,
+    percussion_snare: DigitalOscillator,
+    percussion_hihat: DigitalOscillator,
+    percussion_volume: f32,
     
     // Sample playback system for short audio clips
     sample_active: bool,
@@ -111,6 +119,14 @@ struct DigitalOscillator {
     vibrato_phase: f32,     // LFO phase for vibrato
     vibrato_depth: f32,     // Vibrato intensity (0.0 = off)
     vibrato_rate: f32,      // Vibrato speed in Hz
+    target_frequency: f32,  // Glide destination; frequency ramps toward this when glide_time > 0
+    glide_time: f32,        // Seconds to glide from frequency to target_frequency (0.0 = instant, default)
+    glide_start_frequency: f32, // frequency value at the moment the current glide began
+    glide_elapsed: f32,     // seconds elapsed since the current glide began
+    attack_time: f32,       // Seconds to ramp envelope_level 0->1 on note-on (0.0 = instant, default)
+    release_time: f32,      // Seconds to ramp envelope_level ->0 on note-off (0.0 = instant, default)
+    envelope_level: f32,    // Current envelope gain (0.0-1.0), applied as an extra multiplier on top of volume
+    releasing: bool,        // True once note-off has been issued but the release tail hasn't finished
 }
 
 #[derive(Clone)]
@@ -216,6 +232,14 @@ impl Apu {
                 vibrato_phase: 0.0,
                 vibrato_depth: 0.0,
                 vibrato_rate: 5.0,
+                target_frequency: 0.0,
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             },
             master_volume: 0.5,
             sample_rate: 44100.0,
@@ -281,6 +305,14 @@ impl Apu {
                 vibrato_phase: 0.0,
                 vibrato_depth: 0.0,
                 vibrato_rate: 5.0,
+                target_frequency: 0.0,
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             },
 
             // Initialize polyphonic synthesizer
@@ -327,6 +359,14 @@ impl Apu {
                 vibrato_phase: 0.0,
                 vibrato_depth: 0.0,  // No vibrato on bass
                 vibrato_rate: 5.0,
+                target_frequency: 0.0,
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             },
             sid_voice2: DigitalOscillator {
                 enabled: false,
@@ -348,7 +388,7 @@ impl Apu {
                     b1: 0.0, b2: 0.0,
                 },
                 delay: DigitalDelay {
-                    enabled: false,
+                    enabled: true, // reverb/echo on the lead melody
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
@@ -359,8 +399,16 @@ impl Apu {
                     feedback_filter: 0.0,
                 },
                 vibrato_phase: 0.0,
-                vibrato_depth: 0.005,  // Subtle vibrato (0.5% pitch variation)
-                vibrato_rate: 3.0,     // 3 Hz vibrato (slower, more gentle)
+                vibrato_depth: 0.02,   // More pronounced vibrato (2% pitch variation)
+                vibrato_rate: 5.5,     // Faster, more lively wobble
+                target_frequency: 0.0,
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             },
             sid_voice3: DigitalOscillator {
                 enabled: false,
@@ -395,11 +443,120 @@ impl Apu {
                 vibrato_phase: 0.0,
                 vibrato_depth: 0.0,  // No vibrato on voice3
                 vibrato_rate: 5.0,
+                target_frequency: 0.0,
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             },
             sid_enabled: false,
             sid_volume: 0.8,
             poly_volume: 0.8,
-            
+
+            percussion_kick: DigitalOscillator {
+                enabled: false,
+                frequency: Self::midi_to_frequency(28), // E1 - tuned to the song's key, not a noise burst
+                waveform: 3, // sine
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.35,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: false, // pure sine needs no shaping
+                    filter_type: 0,
+                    cutoff: 0.09,
+                    resonance: 0.2,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.0, feedback: 0.0, mix: 0.0,
+                    buffer: Vec::new(), buffer_size: 0,
+                    write_pos: 0, read_pos: 0, feedback_filter: 0.0,
+                },
+                vibrato_phase: 0.0, vibrato_depth: 0.0, vibrato_rate: 5.0,
+                target_frequency: Self::midi_to_frequency(36), glide_time: 0.0,
+                glide_start_frequency: 0.0, glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.15, // short thump decay
+                envelope_level: 0.0,
+                releasing: false,
+            },
+            percussion_snare: DigitalOscillator {
+                enabled: false,
+                frequency: 200.0,
+                waveform: 4, // noise
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.4,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: true,
+                    filter_type: 2, // bandpass - snappy midrange crack
+                    cutoff: 0.45,
+                    resonance: 0.3,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.0, feedback: 0.0, mix: 0.0,
+                    buffer: Vec::new(), buffer_size: 0,
+                    write_pos: 0, read_pos: 0, feedback_filter: 0.0,
+                },
+                vibrato_phase: 0.0, vibrato_depth: 0.0, vibrato_rate: 5.0,
+                target_frequency: 200.0, glide_time: 0.0,
+                glide_start_frequency: 0.0, glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.1,
+                envelope_level: 0.0,
+                releasing: false,
+            },
+            percussion_hihat: DigitalOscillator {
+                enabled: false,
+                frequency: 800.0,
+                waveform: 4, // noise
+                phase: 0.0,
+                pulse_width: 0.5,
+                volume: 0.4,
+                detune: 0.0,
+                lfsr: 0x7FFF,
+                filter: ResonantFilter {
+                    enabled: true,
+                    filter_type: 1, // highpass - bright, thin
+                    cutoff: 0.75,
+                    resonance: 0.1,
+                    x1: 0.0, x2: 0.0,
+                    y1: 0.0, y2: 0.0,
+                    a0: 1.0, a1: 0.0, a2: 0.0,
+                    b1: 0.0, b2: 0.0,
+                },
+                delay: DigitalDelay {
+                    enabled: false,
+                    delay_time: 0.0, feedback: 0.0, mix: 0.0,
+                    buffer: Vec::new(), buffer_size: 0,
+                    write_pos: 0, read_pos: 0, feedback_filter: 0.0,
+                },
+                vibrato_phase: 0.0, vibrato_depth: 0.0, vibrato_rate: 5.0,
+                target_frequency: 800.0, glide_time: 0.0,
+                glide_start_frequency: 0.0, glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.04, // very short, ticky
+                envelope_level: 0.0,
+                releasing: false,
+            },
+            percussion_volume: 0.45,
+
             // Sample playback initialization
             sample_active: false,
             sample_data: None,
@@ -539,6 +696,11 @@ impl Apu {
                 }
             }
             sample += poly_sample * self.poly_volume;
+            // Prune voices whose release tail has finished (generate_digital_oscillator_sample
+            // sets enabled = false once envelope_level reaches 0). With release_time == 0.0
+            // (the default) synth_note_off already removed the entry immediately, so this is a
+            // no-op in the common case.
+            self.synth_oscillators.retain(|_, osc| osc.enabled);
         }
 
         // Generate SID-style 3-voice synthesizer (for games) - only if voices are active
@@ -554,6 +716,23 @@ impl Apu {
                 sid_sample += Self::generate_digital_oscillator_sample(&mut self.sid_voice3, self.sample_rate);
             }
             sample += sid_sample * self.sid_volume;
+        }
+
+        // Persistent percussion voices — independent of each other, so kick and snare
+        // (or any combination) can sound simultaneously, unlike the old monophonic
+        // play_sound_effect-based drums.
+        if self.percussion_kick.enabled || self.percussion_snare.enabled || self.percussion_hihat.enabled {
+            let mut percussion_sample = 0.0;
+            if self.percussion_kick.enabled {
+                percussion_sample += Self::generate_digital_oscillator_sample(&mut self.percussion_kick, self.sample_rate);
+            }
+            if self.percussion_snare.enabled {
+                percussion_sample += Self::generate_digital_oscillator_sample(&mut self.percussion_snare, self.sample_rate);
+            }
+            if self.percussion_hihat.enabled {
+                percussion_sample += Self::generate_digital_oscillator_sample(&mut self.percussion_hihat, self.sample_rate);
+            }
+            sample += percussion_sample * self.percussion_volume;
         }
 
         sample * self.master_volume
@@ -760,6 +939,35 @@ impl Apu {
         }
     }
 
+    // Shared note-on/note-off helpers so every voice (SID, poly, test) gets the same
+    // glide/envelope behavior consistently. With attack_time/release_time/glide_time at
+    // their default 0.0, these are behaviorally identical to directly stomping
+    // frequency/enabled the way every call site did before this existed.
+    fn start_note(osc: &mut DigitalOscillator, frequency: f32) {
+        if osc.glide_time <= 0.0 {
+            // Default: snap immediately, exactly matching pre-glide behavior.
+            osc.frequency = frequency;
+        } else if osc.frequency != frequency {
+            // Start a fresh linear glide from wherever we currently are toward the new note.
+            osc.glide_start_frequency = osc.frequency;
+            osc.glide_elapsed = 0.0;
+        }
+        osc.target_frequency = frequency;
+        osc.releasing = false;
+        osc.envelope_level = if osc.attack_time <= 0.0 { 1.0 } else { 0.0 };
+        osc.enabled = true;
+    }
+
+    fn stop_note(osc: &mut DigitalOscillator) {
+        if osc.release_time <= 0.0 {
+            osc.enabled = false;
+            osc.envelope_level = 0.0;
+            osc.releasing = false;
+        } else {
+            osc.releasing = true;
+        }
+    }
+
     fn generate_digital_oscillator_sample(osc: &mut DigitalOscillator, sample_rate: f32) -> f32 {
         // Update vibrato LFO
         osc.vibrato_phase += osc.vibrato_rate / sample_rate;
@@ -773,6 +981,17 @@ impl Apu {
         } else {
             0.0
         };
+
+        // Glide (portamento): linearly interpolate frequency from glide_start_frequency to
+        // target_frequency over glide_time seconds, driven by elapsed time (not by
+        // recomputing the step from the remaining distance, which would asymptote and
+        // never actually arrive). glide_time == 0.0 (the default for every existing call
+        // site) means note-on already set `frequency` directly, so this is a no-op.
+        if osc.glide_time > 0.0 && osc.frequency != osc.target_frequency {
+            osc.glide_elapsed += 1.0 / sample_rate;
+            let t = (osc.glide_elapsed / osc.glide_time).min(1.0);
+            osc.frequency = osc.glide_start_frequency + (osc.target_frequency - osc.glide_start_frequency) * t;
+        }
 
         // Apply vibrato and detune to frequency
         let effective_freq = osc.frequency * (1.0 + osc.detune + vibrato_mod);
@@ -835,7 +1054,31 @@ impl Apu {
         // Apply digital delay effect
         let delayed_sample = Self::apply_digital_delay(&mut osc.delay, filtered_sample, sample_rate);
 
-        delayed_sample * osc.volume
+        // Amp envelope: ramp envelope_level toward 1.0 (attack) or 0.0 (release/releasing).
+        // attack_time == 0.0 and release_time == 0.0 (the default for every existing call site)
+        // mean these ramps are instant, so envelope_level snaps straight to 1.0/0.0 and this is
+        // behaviorally identical to not having an envelope at all.
+        if osc.releasing {
+            if osc.release_time <= 0.0 {
+                osc.envelope_level = 0.0;
+            } else {
+                let step = 1.0 / (osc.release_time * sample_rate);
+                osc.envelope_level = (osc.envelope_level - step).max(0.0);
+            }
+            if osc.envelope_level <= 0.0001 {
+                osc.envelope_level = 0.0;
+                osc.enabled = false;
+            }
+        } else if osc.envelope_level < 1.0 {
+            if osc.attack_time <= 0.0 {
+                osc.envelope_level = 1.0;
+            } else {
+                let step = 1.0 / (osc.attack_time * sample_rate);
+                osc.envelope_level = (osc.envelope_level + step).min(1.0);
+            }
+        }
+
+        delayed_sample * osc.volume * osc.envelope_level
     }
 
     // MIDI note to frequency conversion
@@ -1208,7 +1451,12 @@ impl Apu {
                     delay_time: 0.3,
                     feedback: 0.4,
                     mix: 0.2,
-                    buffer: vec![0.0; 2205], // 50ms buffer at 44.1kHz (reduced to save memory)
+                    // No buffer allocated: this delay is disabled and no setter reaches it
+                    // (per-voice delay was never actually reachable for poly/Z-Synth voices),
+                    // so `apply_digital_delay`'s `if !enabled { return input }` early-out means
+                    // this is provably never indexed. Was `vec![0.0; 2205]` (8.8KB) allocated
+                    // on every single note-on for a buffer that could never be used — fixed here.
+                    buffer: Vec::new(),
                     buffer_size: 2205,
                     write_pos: 0,
                     read_pos: 0,
@@ -1217,6 +1465,14 @@ impl Apu {
                 vibrato_phase: 0.0,
                 vibrato_depth: 0.0,
                 vibrato_rate: 5.0,
+                target_frequency: Self::midi_to_frequency(note as u8),
+                glide_time: 0.0,
+                glide_start_frequency: 0.0,
+                glide_elapsed: 0.0,
+                attack_time: 0.0,
+                release_time: 0.0,
+                envelope_level: 1.0,
+                releasing: false,
             };
 
             // Calculate filter coefficients for the new oscillator
@@ -1228,7 +1484,13 @@ impl Apu {
     }
 
     pub fn synth_note_off(&mut self, note: u32) {
-        self.synth_oscillators.remove(&note);
+        if let Some(osc) = self.synth_oscillators.get_mut(&note) {
+            if osc.release_time > 0.0 {
+                Self::stop_note(osc);
+            } else {
+                self.synth_oscillators.remove(&note);
+            }
+        }
         if self.synth_oscillators.is_empty() {
             self.synth_enabled = false;
         }
@@ -1290,54 +1552,86 @@ impl Apu {
     // SID-style 3-voice API for game developers
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice1_play_note(&mut self, note: u8, waveform: u8) {
-        self.sid_voice1.frequency = Self::midi_to_frequency(note);
+        Self::start_note(&mut self.sid_voice1, Self::midi_to_frequency(note));
         self.sid_voice1.waveform = waveform.clamp(0, 4);
-        self.sid_voice1.enabled = true;
         self.sid_enabled = true;
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice2_play_note(&mut self, note: u8, waveform: u8) {
-        self.sid_voice2.frequency = Self::midi_to_frequency(note);
+        Self::start_note(&mut self.sid_voice2, Self::midi_to_frequency(note));
         self.sid_voice2.waveform = waveform.clamp(0, 4);
-        self.sid_voice2.enabled = true;
         self.sid_enabled = true;
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice3_play_note(&mut self, note: u8, waveform: u8) {
-        self.sid_voice3.frequency = Self::midi_to_frequency(note);
+        Self::start_note(&mut self.sid_voice3, Self::midi_to_frequency(note));
         self.sid_voice3.waveform = waveform.clamp(0, 4);
-        self.sid_voice3.enabled = true;
         self.sid_enabled = true;
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice1_stop(&mut self) {
-        self.sid_voice1.enabled = false;
+        Self::stop_note(&mut self.sid_voice1);
         self.check_sid_enabled();
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice2_stop(&mut self) {
-        self.sid_voice2.enabled = false;
+        Self::stop_note(&mut self.sid_voice2);
         self.check_sid_enabled();
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_voice3_stop(&mut self) {
-        self.sid_voice3.enabled = false;
+        Self::stop_note(&mut self.sid_voice3);
         self.check_sid_enabled();
     }
-    
+
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn sid_stop_all(&mut self) {
-        self.sid_voice1.enabled = false;
-        self.sid_voice2.enabled = false;
-        self.sid_voice3.enabled = false;
-        self.sid_enabled = false;
+        Self::stop_note(&mut self.sid_voice1);
+        Self::stop_note(&mut self.sid_voice2);
+        Self::stop_note(&mut self.sid_voice3);
+        self.check_sid_enabled();
     }
-    
+
+    // Trigger a persistent percussion voice: 0 = kick, 1 = snare, anything else = hi-hat.
+    // Unlike the old play_sound_effect-based drums, these are independent voices, so
+    // e.g. a kick and snare can sound simultaneously. Each voice self-decays via its
+    // own release_time (set at construction) — no separate note-off call needed.
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
+    pub fn trigger_percussion(&mut self, kind: u8, volume: f32) {
+        let osc = match kind {
+            0 => &mut self.percussion_kick,
+            1 => &mut self.percussion_snare,
+            _ => &mut self.percussion_hihat,
+        };
+        osc.enabled = true;
+        osc.phase = 0.0;
+        osc.volume = volume.clamp(0.0, 1.0);
+        osc.envelope_level = 1.0;
+        osc.releasing = true; // begin decaying immediately per this voice's release_time
+
+        if kind == 0 {
+            // Kick pitch envelope: sweep down from a higher "punch" tone to the
+            // tuned low fundamental (target_frequency, set at construction) over
+            // 45ms — the classic 808-style kick technique. A static pitch reads
+            // as a low sine tone, not a kick; the fast downward sweep is what
+            // gives it a percussive attack.
+            osc.frequency = Self::midi_to_frequency(55); // G3 punch tone
+            osc.glide_start_frequency = osc.frequency;
+            osc.glide_elapsed = 0.0;
+            osc.glide_time = 0.045;
+        }
+    }
+
+    #[cfg_attr(feature = "wasm", wasm_bindgen)]
+    pub fn set_percussion_volume(&mut self, volume: f32) {
+        self.percussion_volume = volume.clamp(0.0, 1.0);
+    }
+
     // Volume control for mixing SID and polyphonic layers
     #[cfg_attr(feature = "wasm", wasm_bindgen)]
     pub fn set_sid_volume(&mut self, volume: f32) {
@@ -1429,5 +1723,181 @@ impl Apu {
     // Helper method to check if any SID voices are active
     fn check_sid_enabled(&mut self) {
         self.sid_enabled = self.sid_voice1.enabled || self.sid_voice2.enabled || self.sid_voice3.enabled;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_default_is_instant_unity_gain() {
+        // attack_time defaults to 0.0 at every call site -> envelope_level should
+        // snap straight to 1.0 on note-on, matching pre-envelope behavior exactly.
+        let mut apu = Apu::new();
+        apu.sid_voice1_play_note(60, 0);
+        assert_eq!(apu.sid_voice1.envelope_level, 1.0);
+    }
+
+    #[test]
+    fn release_default_is_instant() {
+        // release_time defaults to 0.0 -> stop should immediately disable the voice,
+        // exactly like the old `self.sid_voice1.enabled = false` it replaced.
+        let mut apu = Apu::new();
+        apu.sid_voice1_play_note(60, 0);
+        apu.sid_voice1_stop();
+        assert!(!apu.sid_voice1.enabled);
+        assert_eq!(apu.sid_voice1.envelope_level, 0.0);
+        assert!(!apu.sid_voice1.releasing);
+    }
+
+    #[test]
+    fn release_tail_extends_when_release_time_is_set() {
+        let mut apu = Apu::new();
+        apu.sid_voice1_play_note(60, 0);
+        apu.sid_voice1.release_time = 0.05; // 50ms tail
+        apu.sid_voice1_stop();
+
+        // Should still be sounding immediately after stop (in the release tail).
+        assert!(apu.sid_voice1.enabled);
+        assert!(apu.sid_voice1.releasing);
+
+        // Step samples until the tail finishes; envelope should monotonically
+        // decrease and the voice should self-terminate (enabled -> false).
+        let mut last_level = apu.sid_voice1.envelope_level;
+        let mut terminated = false;
+        for _ in 0..(apu.sample_rate as usize) {
+            // one full second is plenty for a 50ms release
+            apu.generate_sample();
+            if apu.sid_voice1.releasing {
+                assert!(apu.sid_voice1.envelope_level <= last_level, "envelope should not increase while releasing");
+                last_level = apu.sid_voice1.envelope_level;
+            }
+            if !apu.sid_voice1.enabled {
+                terminated = true;
+                break;
+            }
+        }
+        assert!(terminated, "voice should self-terminate once the release tail finishes");
+    }
+
+    #[test]
+    fn glide_is_instant_when_zero() {
+        // glide_time defaults to 0.0 -> frequency should jump immediately on note-on,
+        // matching the pre-glide `osc.frequency = new_freq` behavior exactly.
+        let mut apu = Apu::new();
+        apu.sid_voice1_play_note(60, 0);
+        let freq_a = apu.sid_voice1.frequency;
+        apu.sid_voice1_play_note(72, 0); // one octave up
+        assert_eq!(apu.sid_voice1.frequency, apu.sid_voice1.target_frequency);
+        assert!(apu.sid_voice1.frequency > freq_a);
+    }
+
+    #[test]
+    fn glide_ramps_toward_target_when_enabled() {
+        let mut apu = Apu::new();
+        apu.sid_voice1_play_note(60, 0);
+        let start_freq = apu.sid_voice1.frequency;
+
+        apu.sid_voice1.glide_time = 0.5; // half a second glide
+        apu.sid_voice1_play_note(72, 0); // one octave up, should NOT jump immediately
+
+        assert_eq!(apu.sid_voice1.frequency, start_freq, "frequency should not jump immediately once glide_time > 0");
+        assert_eq!(apu.sid_voice1.target_frequency, Apu::midi_to_frequency(72));
+
+        // Step a small number of samples and confirm frequency is moving toward target,
+        // but hasn't reached it yet (0.5s glide, way more than a few samples).
+        for _ in 0..100 {
+            apu.generate_sample();
+        }
+        assert!(apu.sid_voice1.frequency > start_freq, "frequency should have moved toward target");
+        assert!(apu.sid_voice1.frequency < apu.sid_voice1.target_frequency, "should not have arrived yet after only 100 samples of a 0.5s glide");
+
+        // Step until the full glide time has elapsed; should land exactly on target.
+        for _ in 0..(apu.sample_rate as usize) {
+            apu.generate_sample();
+        }
+        assert_eq!(apu.sid_voice1.frequency, apu.sid_voice1.target_frequency);
+    }
+
+    #[test]
+    fn synth_note_off_removes_immediately_by_default() {
+        let mut apu = Apu::new();
+        apu.synth_note_on(60);
+        assert!(apu.synth_oscillators.contains_key(&60));
+        apu.synth_note_off(60);
+        assert!(!apu.synth_oscillators.contains_key(&60), "default release_time == 0.0 should remove the voice immediately");
+    }
+
+    #[test]
+    fn synth_delay_buffer_is_not_allocated() {
+        // Regression guard for the fixed per-note-on 8.8KB allocation waste:
+        // the per-voice delay is unreachable (disabled, no setter), so its
+        // buffer should stay empty rather than pre-allocating 2205 samples.
+        let mut apu = Apu::new();
+        apu.synth_note_on(60);
+        let osc = apu.synth_oscillators.get(&60).unwrap();
+        assert!(osc.delay.buffer.is_empty());
+    }
+
+    #[test]
+    fn percussion_kick_and_snare_sound_simultaneously() {
+        // Regression guard for the old play_sound_effect-based drums, which shared
+        // a single monophonic voice — a snare hit would silently cut off a kick
+        // still decaying. Each percussion voice is now independent.
+        let mut apu = Apu::new();
+        apu.trigger_percussion(0, 0.9); // kick
+        apu.trigger_percussion(1, 0.7); // snare
+        assert!(apu.percussion_kick.enabled);
+        assert!(apu.percussion_snare.enabled);
+        assert!(!apu.percussion_hihat.enabled);
+    }
+
+    #[test]
+    fn percussion_voice_self_terminates_after_its_own_release_time() {
+        let mut apu = Apu::new();
+        apu.trigger_percussion(0, 0.9); // kick, release_time = 0.15s
+        assert!(apu.percussion_kick.enabled);
+        assert!(apu.percussion_kick.releasing);
+
+        let mut terminated = false;
+        for _ in 0..(apu.sample_rate as usize) {
+            // one full second is plenty for a 150ms release
+            apu.generate_sample();
+            if !apu.percussion_kick.enabled {
+                terminated = true;
+                break;
+            }
+        }
+        assert!(terminated, "kick should self-terminate once its release tail finishes");
+    }
+
+    #[test]
+    fn percussion_retrigger_restarts_decay() {
+        // Hitting the same drum again mid-decay should restart it, not stack or ignore it.
+        let mut apu = Apu::new();
+        apu.trigger_percussion(1, 0.7); // snare
+        for _ in 0..1000 {
+            apu.generate_sample();
+        }
+        let level_before_retrigger = apu.percussion_snare.envelope_level;
+        assert!(level_before_retrigger < 1.0, "snare should have decayed partway by now");
+
+        apu.trigger_percussion(1, 0.7);
+        assert_eq!(apu.percussion_snare.envelope_level, 1.0, "retrigger should reset envelope to full");
+        assert!(apu.percussion_snare.enabled);
+    }
+
+    #[test]
+    fn percussion_volume_clamped_and_applied_independently_of_master() {
+        let mut apu = Apu::new();
+        apu.trigger_percussion(2, 1.5); // hi-hat, out-of-range volume should clamp
+        assert_eq!(apu.percussion_hihat.volume, 1.0);
+
+        apu.set_percussion_volume(2.0);
+        assert_eq!(apu.percussion_volume, 1.0);
+
+        apu.set_percussion_volume(-1.0);
+        assert_eq!(apu.percussion_volume, 0.0);
     }
 }
