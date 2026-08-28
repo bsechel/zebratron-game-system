@@ -1875,10 +1875,8 @@ impl Ppu {
 
         // Track how many characters we've processed across all lines
         let mut chars_processed = 0;
-        let mut last_text_y = start_y;
         for (i, line) in text_lines.iter().enumerate() {
             let y = start_y + (i * line_height);
-            last_text_y = y;
 
             // Calculate how many characters of this line to show
             let chars_to_show = if char_index > chars_processed {
@@ -1902,12 +1900,6 @@ impl Ppu {
 
             chars_processed += line.len();
         }
-
-        // Add "PRESS BUTTON" prompt below the text block, clamped so it never runs
-        // off the bottom of the screen for taller images/longer text.
-        let prompt_color = self.palette[37]; // Yellow
-        let prompt_y = (last_text_y + line_height + 4).min(SCREEN_HEIGHT.saturating_sub(10));
-        self.render_small_text("PRESS ANY BUTTON", 100, prompt_y, prompt_color);
     }
 
     fn render_platformer_background(&mut self) {
