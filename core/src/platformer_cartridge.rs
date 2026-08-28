@@ -1892,7 +1892,7 @@ impl PlatformerCartridge {
                     "ROOTBEER TIME IS SO BEAUTIFUL HERE.".to_string(),
                 ],
                 sound_id: Some(6), // Laugh sound
-                background_color_index: 79, // Turquoise, matches the waterfall art
+                background_color_index: 0, // Black
                 background_opaque: true,
             },
             CutsceneScreen {
